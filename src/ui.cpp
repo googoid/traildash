@@ -582,7 +582,7 @@ static void overlays(const UiState& s) {
   }
 
   if (s.debug) {
-    char b[32]; snprintf(b, sizeof b, "%.0f fps  trust %.2f", s.fps, s.trust);
+    char b[32]; snprintf(b, sizeof b, "%.0f fps  adapt %.2f", s.fps, s.adapt);
     gfx.text(font_tiny, b, CX, 470, DIM, 0);
   }
 }

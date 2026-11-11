@@ -21,13 +21,28 @@
 #define TRIP_MIN_KMH         2.0f    // below this, speed counts as 0 (GPS jitter when parked)
 #define MAX_SPEED_ACC_KMH    5.0f    // max speed only from fixes with speed accuracy better than this
 
-// Fusion tuning (Mahony filter). Lower KP = steadier on bumpy roads, slower to settle.
-#define FUSION_KP            0.6f
-#define FUSION_KI            0.05f
-#define FUSION_KP_MIN        0.05f   // minimum gravity pull (bounds drift during long manoeuvres)
-// Accelerometer is ignored while the car is clearly accelerating/braking/cornering:
-#define ACC_TRUST_GATE_G     0.12f   // |a| deviating from 1g by more than this -> distrust
-#define GYRO_TRUST_GATE_DPS  6.0f    // turning faster than this -> distrust
+// Tilt filter. Accelerating/braking briefly shows up as pitch; that is by design.
+#define TILT_GYRO_CARRY      1       // 1 = gyro turns the reading instantly, accel keeps it true (recommended)
+                                     // 0 = accel only; gyro just tells the filter when to follow faster
+#if TILT_GYRO_CARRY
+#define TILT_SMOOTH_S        2.5f    // accel smoothing (higher = calmer numbers on rough roads)
+#define TILT_FAST_S          0.3f    // smoothing while catching up a large error
+#else
+#define TILT_SMOOTH_S        1.2f    // smoothing while steady (higher = calmer, but slower on slow tilts)
+#define TILT_FAST_S          0.05f   // smoothing while the car is tilting (lower = snappier)
+#endif
+#define TILT_GYRO_MIN_DPS    2.0f    // [mode 0] tilt rate below this = not tilting (road shake)
+#define TILT_GYRO_FULL_DPS   6.0f    // [mode 0] tilt rate at which the filter is fully fast
+#define TILT_GYRO_HOLD_S     0.4f    // [mode 0] stay fast this long after the rotation stops
+#define TILT_GYRO_AVG_S      30.0f   // gyro bias tracking time constant
+#define TILT_GYRO_BIAS_GATE_DPS 3.0f // bias is only tracked while rotating slower than this
+// a large, persistent accelerometer deviation speeds the filter up (gross errors can't stick)
+#define TILT_DETECT_S        0.4f    // change detector time constant
+#define TILT_ADAPT_MIN_DEG   5.0f    // deviation where it starts to speed up
+#define TILT_ADAPT_DEG       10.0f   // deviation where it is fully fast
+#define TILT_BUMP_G          0.15f   // |a| jumping more than this from its average = bump, sample ignored
+#define TILT_BUMP_HOLD_S     0.5f    // ...but never ignore for longer than this
+#define DISPLAY_HYST_DEG     0.3f    // whole-degree readout changes only this far past the .5 boundary
 
 // ---------------- board pins (do not change) ----------------
 #define PIN_I2C_SDA     15

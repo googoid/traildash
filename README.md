@@ -47,8 +47,10 @@ Warning/danger thresholds, buzzer on/off, backlight, filter tuning.
 
 ## How it works
 
-- `fusion.cpp` — Mahony filter (gyro + accelerometer). The accelerometer is ignored while braking,
-  accelerating or cornering, so readings don't jump in traffic. Gyro bias is re-learned whenever the car is still.
+- `tilt.cpp` — accelerometer-only inclinometer (no gyro, so nothing drifts). Median filter against
+  spikes, bump rejection, and adaptive smoothing: heavy while the angle is steady, fast while it
+  really changes. Accelerating/braking briefly shows as pitch — by design. Readout is whole degrees
+  with hysteresis.
 - `ble.cpp` — NimBLE peripheral; the phone writes GPS packets to it. Initialised before the display
   (the BT stack touches NVS flash), no bonding, so nothing is written to flash afterwards.
 - `gfx.cpp` — small antialiased vector renderer (polygons, arcs, gradients, dithering, smooth fonts).

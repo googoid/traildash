@@ -6,21 +6,21 @@
 //  Double-tap     reset peak values
 //  BOOT button    short = next screen, long = same as hold
 //
-// Core 1: sensor task (IMU 250 Hz, fusion, touch, gestures, buzzer)
+// Core 1: sensor task (IMU 250 Hz, tilt filter, touch, gestures, buzzer)
 // Core 0: render task (UI into PSRAM double buffer), NimBLE host (GPS from the iPhone)
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 #include "config.h"
 #include "board.h"
 #include "sensors.h"
-#include "fusion.h"
+#include "tilt.h"
 #include "ui.h"
 #include "gfx.h"
 #include "ble.h"
 
 // ------------------------------------------------------------------ shared state
 struct Shared {
-  volatile float pitch = 0, roll = 0, trust = 1;
+  volatile float pitch = 0, roll = 0, adapt = 0;
   volatile float peakRollL = 0, peakRollR = 0, peakPitchUp = 0, peakPitchDn = 0;
   volatile uint8_t screen = SCREEN_DUAL;
   volatile float holdProgress = 0;
@@ -55,8 +55,8 @@ static void resetTrip() { sh.maxKmh = 0; sh.tripKm = 0; }
 static void nextScreen() { sh.screen = (sh.screen + 1) % SCREEN_COUNT; }
 
 static void startLevel() {
-  if (fusion::levelCalibrationBusy()) return;
-  fusion::startLevelCalibration();
+  if (tilt::levelCalibrationBusy()) return;
+  tilt::startLevelCalibration();
   sh.leveling = true;
 }
 
@@ -124,18 +124,18 @@ static void sensorTask(void*) {
     if (dt > 0.05f) dt = 0.05f;
     if (!imu::read(s)) continue;
 
-    bool wasBusy = fusion::levelCalibrationBusy();
-    fusion::update(s, dt);
-    if (wasBusy && !fusion::levelCalibrationBusy()) {
+    bool wasBusy = tilt::levelCalibrationBusy();
+    tilt::update(s, dt);
+    if (wasBusy && !tilt::levelCalibrationBusy()) {
       sh.leveling = false;
       sh.levelSet = true;
       resetPeaks();
       showToast("LEVEL SET");
     }
-    Attitude a = fusion::attitude();
+    Attitude a = tilt::attitude();
     sh.pitch = a.pitch;
     sh.roll = a.roll;
-    sh.trust = a.trust;
+    sh.adapt = a.adapt;
 
     // peaks (filtered ~0.3 s so pot-holes don't register)
     float k = dt / 0.3f;
@@ -191,9 +191,9 @@ static void sensorTask(void*) {
     if (millis() - lastPrint > 500) {
       lastPrint = millis();
       float gx, gy, gz;
-      fusion::rawGravity(gx, gy, gz);
-      Serial.printf("pitch %6.1f  roll %6.1f  trust %.2f  still %d  acc[sensor] %+.2f %+.2f %+.2f  fps %.0f\n",
-                    a.pitch, a.roll, a.trust, a.still, gx, gy, gz, sh.fps);
+      tilt::rawGravity(gx, gy, gz);
+      Serial.printf("pitch %6.1f  roll %6.1f  adapt %.2f  bump %d  acc[sensor] %+.2f %+.2f %+.2f  fps %.0f\n",
+                    a.pitch, a.roll, a.adapt, a.bump, gx, gy, gz, sh.fps);
     }
     while (Serial.available()) {
       int c = Serial.read();
@@ -215,9 +215,10 @@ static void stripCb(uint16_t* buf, int y0, int rows, void* ctx) {
 static uint32_t hashCb(int y0, int rows, void* ctx) {
   return ui::stripHash(y0, rows, *(const UiState*)ctx);
 }
-// show changes >= step, so sensor noise doesn't force redraws
-static float hyst(float shown, float v, float step) {
-  return fabsf(v - shown) >= step ? roundf(v / step) * step : shown;
+// Whole-degree readout with hysteresis: the shown value only moves once the
+// angle is clearly past the rounding boundary, so the number never flickers.
+static float holdDeg(float shown, float v) {
+  return fabsf(v - shown) > 0.5f + DISPLAY_HYST_DEG ? roundf(v) : shown;
 }
 
 // Write a new level reference to flash. The RGB panel must be stopped for that
@@ -226,7 +227,7 @@ static void saveLevel() {
   uint32_t t0 = millis();
   board::setBacklight(0);
   board::displayPause();
-  fusion::commitSave();
+  tilt::commitSave();
   bool ok = board::displayResume();
   Serial.printf("[level] saved to flash in %u ms%s\n", (unsigned)(millis() - t0), ok ? "" : " - display restart FAILED");
   if (!ok) { delay(100); esp_restart(); }   // should not happen; a reboot recovers the display
@@ -235,23 +236,18 @@ static void saveLevel() {
 static void renderTask(void*) {
   bool backlightOff = false;
   UiState st;
-  float dispPitch = sh.pitch, dispRoll = sh.roll;
   uint32_t last = micros();
   const uint32_t bootMs = millis();
   float fpsAcc = 0; int fpsN = 0;
 
   for (;;) {
-    if (fusion::hasUnsavedLevel()) { saveLevel(); backlightOff = true; }
+    if (tilt::hasUnsavedLevel()) { saveLevel(); backlightOff = true; }
     uint32_t nowUs = micros();
     float dt = (nowUs - last) * 1e-6f;
     last = nowUs;
-    // gentle display smoothing (the fusion already filters noise)
-    float k = fminf(1.f, dt / 0.10f);
-    dispPitch += (sh.pitch - dispPitch) * k;
-    dispRoll += (sh.roll - dispRoll) * k;
-
-    st.pitch = hyst(st.pitch, dispPitch, 0.1f);
-    st.roll = hyst(st.roll, dispRoll, 0.1f);
+    // smoothing is done in the tilt filter; only the readout hysteresis here
+    st.pitch = holdDeg(st.pitch, sh.pitch);
+    st.roll = holdDeg(st.roll, sh.roll);
     st.peakRollL = sh.peakRollL; st.peakRollR = sh.peakRollR;
     st.peakPitchUp = sh.peakPitchUp; st.peakPitchDn = sh.peakPitchDn;
     st.screen = (Screen)sh.screen;
@@ -262,7 +258,7 @@ static void renderTask(void*) {
     st.toastAge = (millis() - sh.toastAt) * 1e-3f;
     if (st.toast && st.toastAge > 3.f) sh.toast = nullptr;
     st.t = (millis() - bootMs) * 1e-3f;
-    st.trust = sh.trust;
+    st.adapt = sh.adapt;
     st.fps = sh.fps;
     st.debug = sh.debug;
     st.testPattern = sh.testPattern;
@@ -324,13 +320,12 @@ void setup() {
   gfx.beginRecord();   // allocate the display list early so it lands in internal RAM
   gfx.endRecord();
   // All flash (NVS) access must happen before the RGB display starts.
-  fusion::begin();
-  sh.levelSet = fusion::isLevelCalibrated();
+  tilt::begin();
+  sh.levelSet = tilt::isLevelCalibrated();
   board::begin();
   board::setBacklight(0);
-  // Gyro calibration also runs before the display (it may store the bias in flash).
   if (!imu::begin()) Serial.println("[boot] QMI8658 not found");
-  fusion::calibrateGyro(300);
+  tilt::prime(100);   // seed the filter so the first reading is already correct
   if (!board::reserveDisplayMemory()) Serial.println("[boot] strip buffer alloc FAILED");
   // BLE also before the display: the BT stack touches NVS (PHY calibration).
   if (!blelink::begin()) Serial.println("[boot] BLE init FAILED");

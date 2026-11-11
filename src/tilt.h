@@ -1,6 +1,10 @@
 #pragma once
 #include "sensors.h"
 
+// Inclinometer: pitch/roll from the measured gravity direction, heavily smoothed,
+// with the gyro used only short-term so real tilting shows up without lag (see
+// tilt.cpp). Accelerating and braking briefly show up as pitch — accepted by design.
+//
 // Car frame: X forward, Y left, Z up.
 //
 // Mounting calibration ("Set level"): with the car parked on level ground the
@@ -12,14 +16,14 @@
 struct Attitude {
   float pitch;     // deg, + = nose up
   float roll;      // deg, + = right side down
-  float trust;     // 0..1 how much the accelerometer is currently trusted
-  bool  still;     // vehicle is stationary
+  float adapt;     // 0..1 filter response: 0 = steady (heavy smoothing), 1 = catching up
+  bool  bump;      // current sample rejected as a bump / pothole
 };
 
-namespace fusion {
+namespace tilt {
 
 void begin();                          // loads stored mount calibration — call BEFORE the display starts
-bool calibrateGyro(int samples);       // call at boot while still; returns false if moving
+void prime(int samples);               // averages the accelerometer at boot to seed the filter
 void update(const ImuSample& s, float dt);
 Attitude attitude();
 
@@ -31,4 +35,4 @@ void commitSave();                      // write it — only while the display i
 
 void rawGravity(float& x, float& y, float& z);  // sensor-frame filtered accel (debug)
 
-}  // namespace fusion
+}  // namespace tilt

@@ -18,7 +18,7 @@ struct UiState {
   const char* toast = nullptr;          // transient message
   float toastAge = 0;                   // seconds since toast appeared
   float t = 0;                          // seconds since boot (animations)
-  float trust = 1;                      // accelerometer trust 0..1
+  float adapt = 0;                      // tilt filter response 0 (steady) .. 1 (tracking)
   float fps = 0;
   bool  debug = false;
   bool  testPattern = false;            // display diagnostics (serial 'p')
