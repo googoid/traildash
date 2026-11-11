@@ -10,6 +10,19 @@ plus a GPS speed / heading / trip screen fed by an iPhone app over Bluetooth LE.
 ~/.platformio/penv/bin/pio run -t upload
 ```
 
+## Development — use git
+
+The project is under git (branch `main`). Work like this:
+
+- Check `git status` / `git log --oneline` before starting, so you know the current state.
+- Commit a working state before any risky change (filter rewrites, display/flash code), and
+  commit each finished change separately with a message that says *why*.
+- Don't make ad-hoc backup copies of files — revert with git instead
+  (`git diff`, `git restore <file>`, `git revert <commit>`).
+- Generated files are ignored (`.pio`, preview `.bmp`/binary, Xcode `xcuserdata`); the preview
+  PNGs, enclosure STEP/STL and renders are committed — regenerate and commit them with the change
+  that affects them.
+
 ## Use
 
 | Action | Effect |
@@ -47,10 +60,11 @@ Warning/danger thresholds, buzzer on/off, backlight, filter tuning.
 
 ## How it works
 
-- `tilt.cpp` — accelerometer-only inclinometer (no gyro, so nothing drifts). Median filter against
-  spikes, bump rejection, and adaptive smoothing: heavy while the angle is steady, fast while it
-  really changes. Accelerating/braking briefly shows as pitch — by design. Readout is whole degrees
-  with hysteresis.
+- `tilt.cpp` — complementary tilt filter. The gyro turns the reading instantly when the car really
+  tilts; the heavily smoothed accelerometer keeps it true, so gyro errors fade instead of building up
+  (no trust gating, no integral term, no bias learning while driving). Median filter against spikes
+  and bump rejection. Accelerating/braking briefly shows as pitch — by design. `TILT_GYRO_CARRY 0`
+  in `config.h` switches to accelerometer-only angles. Readout is whole degrees with hysteresis.
 - `ble.cpp` — NimBLE peripheral; the phone writes GPS packets to it. Initialised before the display
   (the BT stack touches NVS flash), no bonding, so nothing is written to flash afterwards.
 - `gfx.cpp` — small antialiased vector renderer (polygons, arcs, gradients, dithering, smooth fonts).
