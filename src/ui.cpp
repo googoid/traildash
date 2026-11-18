@@ -288,6 +288,7 @@ bool begin(void* (*alloc)(size_t), void (*flush)(void*, size_t)) {
 }
 
 bool inDanger(const UiState& s) {
+  if (!s.sensorOk) return false;
   return fabsf(s.roll) >= cfg.rollDangerDeg || fabsf(s.pitch) >= cfg.pitchDangerDeg;
 }
 
@@ -306,7 +307,21 @@ static void peakMark(float deg) {
   gfx.poly(tri, 3, Paint(0xC8D2DC, 0.55f), &xf);
 }
 
+// No tilt sensor: level vehicles in grey, no pointers or numbers, a clear note.
+static void renderNoSensor() {
+  gfx.setClip(0, 0, 480, 236);
+  { const float sc = 0.80f; Xf xf = pivotXf(CX, 112, 0, sc, 0, -50); drawRearTruck(xf, sc, 0, FAINT); }
+  gfx.setClip(0, 244, 480, 480);
+  { const float sc = 0.72f; Xf xf = pivotXf(CX, 370, 0, sc, 0, -52); drawSideTruck(xf, sc, 0, FAINT); }
+  gfx.resetClip();
+  gfx.text(font_huge, "--", CX, 230, DIM, 0);
+  gfx.text(font_huge, "--", CX, 318, DIM, 0);
+  gfx.text(font_small, "NO", 410, 228, AMBER, 1);
+  gfx.text(font_small, "SENSOR", 410, 266, AMBER, 1);
+}
+
 static void renderDual(const UiState& s) {
+  if (!s.sensorOk) { renderNoSensor(); return; }
   const float roll = clampf(s.roll, -52, 52), pitch = clampf(s.pitch, -52, 52);
   uint32_t rc = sevColor(s.roll, cfg.rollWarnDeg, cfg.rollDangerDeg);
   uint32_t pc = sevColor(s.pitch, cfg.pitchWarnDeg, cfg.pitchDangerDeg);

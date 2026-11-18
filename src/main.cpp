@@ -6,12 +6,12 @@
 //  Double-tap     reset peak values
 //  BOOT button    short = next screen, long = same as hold
 //
-// Core 1: sensor task (IMU 250 Hz, tilt filter, touch, gestures, buzzer)
+// Core 1: sensor task (remote IMU samples, tilt filter, touch, gestures, buzzer)
 // Core 0: render task (UI into PSRAM double buffer), NimBLE host (GPS from the iPhone,
 //         samples from the remote IMU)
 //
-// IMU source: the remote IMU (remote/, over BLE) while it is connected and remote_imu = 1,
-// otherwise the built-in QMI8658. Each has its own level reference.
+// Tilt comes only from the remote IMU (remote/, over BLE). Without it the gauge shows
+// "NO SENSOR"; angles, peaks and the alarm wait until it is back.
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 #include "config.h"
@@ -40,7 +40,7 @@ struct Shared {
   volatile float fps = 0;
   volatile bool testPattern = false;
   volatile bool fbCheck = false;
-  volatile bool remoteImu = false;   // tilt comes from the remote IMU
+  volatile bool sensorOk = false;    // remote IMU live and the filter seeded
   // GPS (from the phone)
   volatile uint8_t nav = NAV_NO_PHONE;
   const char* volatile obdNote = nullptr;
@@ -66,6 +66,7 @@ static void nextScreen() { sh.screen = (sh.screen + 1) % SCREEN_COUNT; }
 
 static void startLevel() {
   if (tilt::levelCalibrationBusy()) return;
+  if (!sh.sensorOk) { showToast("NO SENSOR"); return; }
   tilt::startLevelCalibration();
   sh.leveling = true;
 }
@@ -114,19 +115,9 @@ struct PressTracker {
 };
 
 // ------------------------------------------------------------------ sensor task
-// Built-in IMU: one sample per tick. Remote IMU: whatever arrived since the last tick
-// (batches of ~10 every 40 ms); each sample is filtered with its own sample period.
+// Each tick takes whatever the remote IMU sent since the last one (batches of ~10
+// every 40 ms); each sample is filtered with its own sample period.
 static constexpr int MAX_BATCH = 16;
-static constexpr uint32_t REMOTE_SWITCH_MS = 1000;   // remote must be live this long before it is used
-
-static void switchSource(bool useRemote) {
-  tilt::setSource(useRemote ? SRC_REMOTE : SRC_BUILTIN);
-  sh.remoteImu = useRemote;
-  sh.levelSet = tilt::isLevelCalibrated();
-  if (!useRemote) showToast("REMOTE SENSOR LOST");
-  else showToast(sh.levelSet ? "REMOTE SENSOR" : "REMOTE: SET LEVEL");
-  Serial.printf("[imu] source: %s\n", useRemote ? "remote" : "built-in");
-}
 
 static void sensorTask(void*) {
   PressTracker touchPress, btnPress;
@@ -138,8 +129,7 @@ static void sensorTask(void*) {
   uint32_t lastPrint = 0;
   TickType_t wake = xTaskGetTickCount();
   const uint32_t bootMs = millis();
-  bool useRemote = false;
-  uint32_t remoteSince = 0;   // millis() since the remote has been live (0 = not live)
+  bool live = false;
   ImuSample batch[MAX_BATCH];
   Attitude a = tilt::attitude();
 
@@ -150,20 +140,15 @@ static void sensorTask(void*) {
     lastUs = nowUs;
     if (dt > 0.05f) dt = 0.05f;
 
-    // ---- source: remote IMU once it has been live for a moment, built-in otherwise
-    bool remoteLive = cfg.remoteImu && remote::live();
-    uint32_t nowMs = millis();
-    if (!remoteLive) remoteSince = 0;
-    else if (!remoteSince) remoteSince = nowMs | 1;
-    bool wantRemote = useRemote ? remoteLive : remoteSince && nowMs - remoteSince >= REMOTE_SWITCH_MS;
-    if (wantRemote != useRemote) { useRemote = wantRemote; switchSource(useRemote); }
-
-    float sdt = dt;
-    int nS = remote::take(batch, MAX_BATCH, sdt);   // always drained, so nothing stale is left
-    if (!useRemote) {
-      sdt = dt;
-      nS = imu::read(batch[0]) ? 1 : 0;
+    // ---- remote IMU: back after a gap -> re-seed (it may have been moved or restarted)
+    bool nowLive = remote::live();
+    if (nowLive != live) {
+      live = nowLive;
+      if (live) tilt::reseed();
+      Serial.printf("[imu] remote sensor %s\n", live ? "live" : "LOST");
     }
+    float sdt;
+    int nS = remote::take(batch, MAX_BATCH, sdt);
 
     for (int i = 0; i < nS; i++) {
       bool wasBusy = tilt::levelCalibrationBusy();
@@ -174,7 +159,7 @@ static void sensorTask(void*) {
         resetPeaks();
         showToast("LEVEL SET");
       }
-      if (tilt::seeding()) continue;   // just switched sensor: attitude holds
+      if (tilt::seeding()) continue;   // attitude holds until the filter is seeded
       a = tilt::attitude();
 
       // peaks (filtered ~0.3 s so pot-holes don't register)
@@ -188,6 +173,9 @@ static void sensorTask(void*) {
         if (pkPitch < 0 && -pkPitch > sh.peakPitchDn) sh.peakPitchDn = -pkPitch;
       }
     }
+    bool ok = live && !tilt::seeding();
+    if (ok && !sh.sensorOk) { pkPitch = a.pitch; pkRoll = a.roll; }   // no ramp from stale values
+    sh.sensorOk = ok;
     sh.pitch = a.pitch;
     sh.roll = a.roll;
     sh.adapt = a.adapt;
@@ -234,9 +222,10 @@ static void sensorTask(void*) {
       else if (!fresh) sh.courseDeg = -1;   // keep last heading while stopped, drop it when data stops
       lastNavSeq = f.seq;
 
+      if (!sh.sensorOk) alarm = false;   // no alarm on stale angles
       if (cfg.buzzer) {
         float ar = fabsf(pkRoll), ap = fabsf(pkPitch);
-        if (!alarm && (ar >= cfg.rollDangerDeg || ap >= cfg.pitchDangerDeg)) alarm = true;
+        if (!alarm && sh.sensorOk && (ar >= cfg.rollDangerDeg || ap >= cfg.pitchDangerDeg)) alarm = true;
         if (alarm && ar < cfg.rollDangerDeg - 2 && ap < cfg.pitchDangerDeg - 2) alarm = false;
         bool beep = alarm && !sh.leveling && (now % 800) < 70;
         static bool beeping = false;
@@ -249,8 +238,11 @@ static void sensorTask(void*) {
       lastPrint = millis();
       float gx, gy, gz;
       tilt::rawGravity(gx, gy, gz);
-      Serial.printf("pitch %6.1f  roll %6.1f  adapt %.2f  bump %d  acc[%s] %+.2f %+.2f %+.2f  fps %.0f\n",
-                    a.pitch, a.roll, a.adapt, a.bump, useRemote ? "remote" : "sensor", gx, gy, gz, sh.fps);
+      if (sh.sensorOk)
+        Serial.printf("pitch %6.1f  roll %6.1f  adapt %.2f  bump %d  acc[sensor] %+.2f %+.2f %+.2f  fps %.0f\n",
+                      a.pitch, a.roll, a.adapt, a.bump, gx, gy, gz, sh.fps);
+      else
+        Serial.printf("no sensor (remote IMU %s)  fps %.0f\n", remote::connected() ? "connected, no data" : "not connected", sh.fps);
     }
     while (Serial.available()) {
       int c = Serial.read();
@@ -264,7 +256,7 @@ static void sensorTask(void*) {
       else if (c == 'i') {
         remote::Stats rs = remote::stats();
         Serial.printf("[remote] %s%s, %lu packets, %lu samples, %lu lost, %lu overflow\n",
-                      remote::connected() ? "connected" : "not connected", useRemote ? " (in use)" : "",
+                      remote::connected() ? "connected" : "not connected", sh.sensorOk ? " (live)" : "",
                       (unsigned long)rs.packets, (unsigned long)rs.samples, (unsigned long)rs.lost,
                       (unsigned long)rs.overflow);
       }
@@ -326,6 +318,7 @@ static void renderTask(void*) {
     st.holdProgress = sh.holdProgress;
     st.leveling = sh.leveling;
     st.levelSet = sh.levelSet;
+    st.sensorOk = sh.sensorOk;
     st.toast = sh.toast;
     st.toastAge = (millis() - sh.toastAt) * 1e-3f;
     if (st.toast && st.toastAge > 3.f) sh.toast = nullptr;
@@ -386,17 +379,14 @@ static PersistState currentState() {
 
 static void loadFromSd() {
   if (!storage::begin()) return;
-  for (int i = 0; i < SRC_COUNT; i++) {
-    float m[9];
-    const char* what = i == SRC_REMOTE ? "remote level reference" : "level reference";
-    if (storage::loadLevel(i, m)) {
-      tilt::setMount((Source)i, m);
-      Serial.printf("[sd] %s loaded\n", what);
-    } else if (tilt::getMount((Source)i, m)) {   // first run with a card: copy the one from flash
-      Serial.printf("[sd] %s copied from flash%s\n", what, storage::saveLevel(i, m) ? "" : " - FAILED");
-    }
+  float m[9];
+  if (storage::loadLevel(m)) {
+    tilt::setMount(m);
+    sh.levelSet = true;
+    Serial.println("[sd] level reference loaded");
+  } else if (tilt::getMount(m)) {   // first run with a card: copy the one from flash
+    Serial.printf("[sd] level reference copied from flash%s\n", storage::saveLevel(m) ? "" : " - FAILED");
   }
-  sh.levelSet = tilt::isLevelCalibrated();
   if (storage::loadState(saved)) {
     sh.peakRollL = saved.peakRollL; sh.peakRollR = saved.peakRollR;
     sh.peakPitchUp = saved.peakPitchUp; sh.peakPitchDn = saved.peakPitchDn;
@@ -418,7 +408,7 @@ static void fmtOpt(char* b, size_t n, bool ok, const char* fmt, float v) {
 static void storageTask(void*) {
   if (cfg.log)
     storage::logOpen(saved.logNo,
-                     "t_s,pitch,roll,speed_kmh,speed_src,course,rpm,coolant_c,intake_c,load_pct,throttle_pct,obd_volts,imu\n");
+                     "t_s,pitch,roll,speed_kmh,speed_src,course,rpm,coolant_c,intake_c,load_pct,throttle_pct,obd_volts\n");
   {
     char b[48];
     int n = snprintf(b, sizeof b, "\n=== power-up, drive log %05lu ===\n", (unsigned long)saved.logNo);
@@ -431,10 +421,9 @@ static void storageTask(void*) {
     uint32_t now = millis();
 
     float m[9];
-    Source ls;
-    if (tilt::takePendingLevel(m, ls)) {
-      bool ok = storage::saveLevel(ls, m);
-      Serial.printf("[sd] %slevel reference saved%s\n", ls == SRC_REMOTE ? "remote " : "", ok ? "" : " - FAILED");
+    if (tilt::takePendingLevel(m)) {
+      bool ok = storage::saveLevel(m);
+      Serial.printf("[sd] level reference saved%s\n", ok ? "" : " - FAILED");
       if (!ok) showToast("SD WRITE FAILED");
     }
 
@@ -462,8 +451,11 @@ static void storageTask(void*) {
       fmtOpt(thr, sizeof thr, live && obd::fresh(o.throttleMs, 10000), "%.0f", o.throttlePct);
       fmtOpt(volt, sizeof volt, live && obd::fresh(o.voltsMs, 20000), "%.1f", o.volts);
       const char* src = sh.nav == NAV_OBD ? "obd" : sh.nav == NAV_LIVE ? "gps" : "";
-      snprintf(line, sizeof line, "%.1f,%.1f,%.1f,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n", now * 1e-3f, sh.pitch, sh.roll,
-               spd, src, crs, rpm, cool, intk, load, thr, volt, sh.remoteImu ? "remote" : "builtin");
+      char pit[8], rol[8];   // empty while there is no sensor
+      fmtOpt(pit, sizeof pit, sh.sensorOk, "%.1f", sh.pitch);
+      fmtOpt(rol, sizeof rol, sh.sensorOk, "%.1f", sh.roll);
+      snprintf(line, sizeof line, "%.1f,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n", now * 1e-3f, pit, rol,
+               spd, src, crs, rpm, cool, intk, load, thr, volt);
       storage::logWrite(line);
     }
     if (now - lastSync >= LOG_SYNC_S * 1000) { lastSync = now; storage::logSync(); }
@@ -500,8 +492,6 @@ void setup() {
   sh.levelSet = tilt::isLevelCalibrated();
   board::begin();
   board::setBacklight(0);
-  if (!imu::begin()) Serial.println("[boot] QMI8658 not found");
-  tilt::prime(100);   // seed the filter so the first reading is already correct
   if (!board::reserveDisplayMemory()) Serial.println("[boot] strip buffer alloc FAILED");
   // BLE also before the display: the BT stack touches NVS (PHY calibration).
   if (!blelink::begin()) Serial.println("[boot] BLE init FAILED");

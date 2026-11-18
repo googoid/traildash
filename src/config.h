@@ -34,10 +34,9 @@
 #define OBD_SEARCH_TIMEOUT_MS 15000  // first request: the adapter tries every protocol
 #define OBD_RESCAN_MS        3000    // pause between scans when no adapter was found
 
-// Remote IMU (remote/: XIAO ESP32-C6 + MPU-6050) — used instead of the built-in IMU while connected
-#define REMOTE_IMU           1       // 0 = ignore it
+// Remote IMU (remote/: XIAO ESP32-C6 + MPU-6050) — the only tilt sensor
 #define REMOTE_FORWARD       "+x"    // remote sensor axis pointing (roughly) forward: +x -x +y -y +z -z
-#define REMOTE_STALE_MS      500     // no samples this long -> back to the built-in IMU
+#define REMOTE_STALE_MS      500     // no samples this long -> "NO SENSOR"
 
 // Tilt filter. Accelerating/braking briefly shows up as pitch; that is by design.
 #define TILT_GYRO_CARRY      1       // 1 = gyro turns the reading instantly, accel keeps it true (recommended)
@@ -91,5 +90,4 @@
 #define EXIO_BUZZER   7
 
 #define I2C_ADDR_TCA9554 0x20
-#define I2C_ADDR_QMI8658 0x6B
 #define I2C_ADDR_GT911   0x5D

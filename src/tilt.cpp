@@ -5,18 +5,8 @@
 #include <Preferences.h>
 #include <math.h>
 
-// Which sensor axis points OUT of the screen, and which points to the TOP edge
-// of the display (sensor frame, unit vectors). Determined for the 2.8C board
-// (lying face-up the QMI8658 reads az = -1 g, so +Z points into the screen).
-#ifndef SENSOR_SCREEN_OUT
-#define SENSOR_SCREEN_OUT {0.f, 0.f, -1.f}
-#endif
-#ifndef SENSOR_SCREEN_TOP
-#define SENSOR_SCREEN_TOP {0.f, 1.f, 0.f}
-#endif
-
 // Signal chain (250 Hz):
-//   accel (on-chip ~9 Hz LPF)
+//   accel (remote IMU, MPU-6050 DLPF ~20 Hz)
 //   -> median of 5 per axis           removes single-sample spikes
 //   -> bump gate                      |a| jumps away from its average -> hold the last value
 //   -> slow pull of the estimate towards it (calm numbers)
@@ -49,16 +39,12 @@ static inline float angleDeg(V3 a, V3 b) { return atan2f(len(cross(a, b)), dot(a
 static inline float clamp01(float v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
 
 // mount rotation: car = M * sensor  (rows: forward, left, up in sensor coords)
-// One per sensor (built-in / remote); mF/mL/mU/levelStored are the active one's.
-static V3 mF = {0, 0, -1}, mL = {-1, 0, 0}, mU = {0, 1, 0};
+static V3 mF = {1, 0, 0}, mL = {0, 1, 0}, mU = {0, 0, 1};
 static bool levelStored = false;
-struct Mount { V3 f, l, u; bool stored; V3 gyroAvg; };
-static Mount mounts[SRC_COUNT] = {{{0, 0, -1}, {-1, 0, 0}, {0, 1, 0}, false, {0, 0, 0}},
-                                  {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}, false, {0, 0, 0}}};
-static Source src = SRC_BUILTIN;
-// after a source switch: average a few samples to seed the filter (attitude holds meanwhile)
+// Seed the filter from the first samples (at start and whenever the sensor comes back
+// after a gap); attitude holds meanwhile.
 static constexpr int SEED_N = 25;
-static int seedN = -1;   // <0 = not seeding
+static int seedN = 0;   // <0 = seeded
 static V3 seedSum = {0, 0, 0};
 
 // filter state (sensor frame, g)
@@ -79,29 +65,21 @@ static bool calBusy = false;
 static int calN = 0;
 static V3 calSum = {0, 0, 0};
 
-// Remote sensor: the axis that points (roughly) forward, from cfg.remoteForward ("+x".."-z").
-static V3 remoteForwardAxis() {
+// The sensor axis that points (roughly) forward, from cfg.remoteForward ("+x".."-z").
+static V3 forwardAxis() {
   const char* a = cfg.remoteForward;
   float sg = a[0] == '-' ? -1.f : 1.f;
   char c = a[1];
   return c == 'y' ? v3(0, sg, 0) : c == 'z' ? v3(0, 0, sg) : v3(sg, 0, 0);
 }
 
+// "Set level" measures up; forward is the configured axis, made horizontal.
 static void buildMount(V3 up) {
   mU = norm(up);
-  V3 hint;
-  if (src == SRC_REMOTE) {
-    hint = remoteForwardAxis();
-    if (fabsf(dot(hint, mU)) > 0.75f) {   // configured axis points (nearly) up: take any horizontal one
-      Serial.println("[tilt] remote_forward axis is vertical - check config.txt; forward is a guess");
-      hint = fabsf(mU.x) < 0.75f ? v3(1, 0, 0) : v3(0, 1, 0);
-    }
-  } else {
-    const float so[3] = SENSOR_SCREEN_OUT, st[3] = SENSOR_SCREEN_TOP;
-    V3 intoScreen = v3(-so[0], -so[1], -so[2]);
-    V3 top = v3(st[0], st[1], st[2]);
-    // choose the forward hint that is more horizontal
-    hint = fabsf(dot(intoScreen, mU)) < 0.75f ? intoScreen : top;
+  V3 hint = forwardAxis();
+  if (fabsf(dot(hint, mU)) > 0.75f) {   // configured axis points (nearly) up: take any horizontal one
+    Serial.println("[tilt] remote_forward axis is vertical - check config.txt; forward is a guess");
+    hint = fabsf(mU.x) < 0.75f ? v3(1, 0, 0) : v3(0, 1, 0);
   }
   mF = norm(sub(hint, scale(mU, dot(hint, mU))));
   mL = cross(mU, mF);
@@ -112,34 +90,28 @@ static void buildMount(V3 up) {
 // is therefore only queued here; the render task pauses the display and calls
 // commitSave() (see main.cpp).
 static float pendingM[9];
-static Source pendingSrc = SRC_BUILTIN;
 static volatile bool savePending = false;
-static const char* const NVS_KEY[SRC_COUNT] = {"mount", "mount_r"};
-
-static void storeActive() {
-  mounts[src].f = mF; mounts[src].l = mL; mounts[src].u = mU; mounts[src].stored = levelStored;
-}
+// "mount_r": the key used when there was also a built-in IMU ("mount", now unused),
+// so a level reference set for the remote IMU then still applies.
+static const char* const NVS_KEY = "mount_r";
 
 static void saveMount() {
   float m[9] = {mF.x, mF.y, mF.z, mL.x, mL.y, mL.z, mU.x, mU.y, mU.z};
   memcpy(pendingM, m, sizeof m);
-  pendingSrc = src;
   levelStored = true;
-  storeActive();
   savePending = true;   // set last: pendingM is complete when this is seen
 }
 
-static void loadMounts() {
+static bool loadMount() {
   Preferences p;
   p.begin("incl", false);   // read-write so a missing namespace isn't logged as an error
-  for (int i = 0; i < SRC_COUNT; i++) {
-    float m[9];
-    if (p.getBytes(NVS_KEY[i], m, sizeof(m)) == sizeof(m)) {
-      mounts[i].f = {m[0], m[1], m[2]}; mounts[i].l = {m[3], m[4], m[5]}; mounts[i].u = {m[6], m[7], m[8]};
-      mounts[i].stored = true;
-    }
-  }
+  float m[9];
+  bool ok = p.getBytes(NVS_KEY, m, sizeof(m)) == sizeof(m);
   p.end();
+  if (ok) {
+    mF = {m[0], m[1], m[2]}; mL = {m[3], m[4], m[5]}; mU = {m[6], m[7], m[8]};
+  }
+  return ok;
 }
 
 static inline V3 toCar(V3 s) { return {dot(mF, s), dot(mL, s), dot(mU, s)}; }
@@ -150,47 +122,15 @@ static void computeAngles() {
   att.roll = atan2f(up.y, up.z) * 180.f / (float)M_PI;
 }
 
-static void activate(Source s) {
-  src = s;
-  mF = mounts[s].f; mL = mounts[s].l; mU = mounts[s].u; levelStored = mounts[s].stored;
-}
-
 void begin() {
-  loadMounts();
-  activate(SRC_BUILTIN);
-  Serial.printf("[tilt] level reference %s, remote %s\n", mounts[0].stored ? "loaded" : "not set",
-                mounts[1].stored ? "loaded" : "not set");
+  levelStored = loadMount();
+  Serial.printf("[tilt] level reference %s\n", levelStored ? "loaded" : "not set");
 }
 
-void setSource(Source s) {
-  if (s == src) return;
-  mounts[src].gyroAvg = gyroAvg;
-  activate(s);
-  gyroAvg = mounts[s].gyroAvg;   // remote: starts at 0, its own firmware removes the bias
+void reseed() {
   seedN = 0;
   seedSum = {0, 0, 0};
-  if (calBusy) { calSum = {0, 0, 0}; calN = 0; }   // level calibration restarts on the new sensor
-}
-
-Source source() { return src; }
-
-void prime(int samples) {
-  V3 sum = {0, 0, 0}, gsum = {0, 0, 0};
-  int got = 0;
-  for (int i = 0; i < samples; i++) {
-    ImuSample s;
-    if (imu::read(s)) { sum = add(sum, v3(s.ax, s.ay, s.az)); gsum = add(gsum, v3(s.gx, s.gy, s.gz)); got++; }
-    delay(4);
-  }
-  V3 g = got ? scale(sum, 1.f / got) : v3(0, 0, 1);
-  if (got) gyroAvg = scale(gsum, 1.f / got);
-  for (V3& m : med) m = g;
-  gFast = gOut = g;
-  magRef = len(g);
-  // No stored level yet: assume the current orientation is level until the user sets it.
-  if (!levelStored) buildMount(g);
-  computeAngles();
-  Serial.printf("[tilt] primed from %d samples: pitch %.1f roll %.1f\n", got, att.pitch, att.roll);
+  if (calBusy) { calSum = {0, 0, 0}; calN = 0; }   // a running level calibration starts over
 }
 
 static inline float median5(float a, float b, float c, float d, float e) {
@@ -205,7 +145,7 @@ static inline float median5(float a, float b, float c, float d, float e) {
 void update(const ImuSample& s, float dt) {
   V3 aS = {s.ax, s.ay, s.az};
 
-  // ---- re-seed after a source switch (the other sensor has its own frame) ----
+  // ---- seed (first samples, or the sensor is back after a gap) ----
   if (seedN >= 0) {
     seedSum = add(seedSum, aS);
     if (++seedN < SEED_N) return;
@@ -213,7 +153,7 @@ void update(const ImuSample& s, float dt) {
     for (V3& m : med) m = g;
     gFast = gOut = g;
     magRef = len(g);
-    if (!levelStored) buildMount(g);   // no reference for this sensor yet: current = level
+    if (!levelStored) buildMount(g);   // no reference yet: current orientation = level
     seedN = -1;
     computeAngles();
     return;
@@ -292,32 +232,28 @@ void commitSave() {
   if (!savePending) return;
   float m[9];
   memcpy(m, pendingM, sizeof m);
-  Source ps = pendingSrc;
   savePending = false;
   Preferences p;
   p.begin("incl", false);
-  p.putBytes(NVS_KEY[ps], m, sizeof m);
+  p.putBytes(NVS_KEY, m, sizeof m);
   p.end();
 }
-bool takePendingLevel(float m[9], Source& s) {
+bool takePendingLevel(float m[9]) {
   if (!savePending) return false;
   memcpy(m, pendingM, sizeof pendingM);
-  s = pendingSrc;
   savePending = false;
   return true;
 }
 
-bool getMount(Source s, float m[9]) {
-  const Mount& k = mounts[s];
-  const float v[9] = {k.f.x, k.f.y, k.f.z, k.l.x, k.l.y, k.l.z, k.u.x, k.u.y, k.u.z};
+bool getMount(float m[9]) {
+  const float v[9] = {mF.x, mF.y, mF.z, mL.x, mL.y, mL.z, mU.x, mU.y, mU.z};
   memcpy(m, v, sizeof v);
-  return k.stored;
+  return levelStored;
 }
 
-void setMount(Source s, const float m[9]) {
-  mounts[s].f = {m[0], m[1], m[2]}; mounts[s].l = {m[3], m[4], m[5]}; mounts[s].u = {m[6], m[7], m[8]};
-  mounts[s].stored = true;
-  if (s == src) activate(s);
+void setMount(const float m[9]) {
+  mF = {m[0], m[1], m[2]}; mL = {m[3], m[4], m[5]}; mU = {m[6], m[7], m[8]};
+  levelStored = true;
 }
 
 void rawGravity(float& x, float& y, float& z) { x = gOut.x; y = gOut.y; z = gOut.z; }

@@ -15,6 +15,7 @@ struct UiState {
   float holdProgress = 0;               // 0..1 long-press progress (0 = not pressing)
   bool  leveling = false;               // level calibration in progress
   bool  levelSet = true;                // a level reference is stored
+  bool  sensorOk = true;                // tilt sensor (remote IMU) delivering; false = "NO SENSOR"
   const char* toast = nullptr;          // transient message
   float toastAge = 0;                   // seconds since toast appeared
   float t = 0;                          // seconds since boot (animations)
