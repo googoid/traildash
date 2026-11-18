@@ -499,11 +499,13 @@ static void renderSpeed(const UiState& s) {
   } else {
     gfx.text(font_med, "- -", CX, SP_HEAD_Y, DIM, 0);
   }
-  const char* st = s.nav == NAV_LIVE ? "GPS" : (s.nav == NAV_NO_FIX ? "WAITING FOR GPS" : "PHONE NOT CONNECTED");
-  uint32_t sc = s.nav == NAV_LIVE ? GREEN : AMBER;
+  const bool live = s.nav == NAV_LIVE || s.nav == NAV_OBD;
+  const char* st = s.nav == NAV_OBD ? "OBD" : s.nav == NAV_LIVE ? "GPS"
+                 : (s.nav == NAV_NO_FIX ? "WAITING FOR GPS" : "PHONE NOT CONNECTED");
+  uint32_t sc = live ? GREEN : AMBER;
   float tw = gfx.textWidth(font_tiny, st);
   gfx.circle(CX - tw / 2 - 9, SP_STATUS_Y - 5, 3.5f, Paint(sc));
-  gfx.text(font_tiny, st, CX + 5, SP_STATUS_Y, s.nav == NAV_LIVE ? DIM : sc, 0);
+  gfx.text(font_tiny, st, CX + 5, SP_STATUS_Y, live ? DIM : sc, 0);
 
   // ---- speed ----
   if (s.speedKmh >= 0) {

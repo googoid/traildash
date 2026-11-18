@@ -17,6 +17,7 @@
 #include "ui.h"
 #include "gfx.h"
 #include "ble.h"
+#include "obd.h"
 
 // ------------------------------------------------------------------ shared state
 struct Shared {
@@ -161,9 +162,18 @@ static void sensorTask(void*) {
       bool fresh = f.seq && now - f.rxMs < NAV_STALE_MS;
       float navDt = (now - lastNavMs) * 1e-3f;
       lastNavMs = now;
-      if (!blelink::connected()) sh.nav = NAV_NO_PHONE;
+      obd::Data od = obd::latest();
+      bool obdSpeed = od.state == obd::OBD_LIVE && obd::fresh(od.speedMs, NAV_STALE_MS);
+      if (obdSpeed) sh.nav = NAV_OBD;
+      else if (!blelink::connected()) sh.nav = NAV_NO_PHONE;
       else sh.nav = fresh && f.speedValid ? NAV_LIVE : NAV_NO_FIX;
-      if (sh.nav == NAV_LIVE) {
+      if (sh.nav == NAV_OBD) {
+        // the car's own speed: whole km/h, no GPS jitter, works in tunnels
+        float kmh = od.speedKmh;
+        sh.speedKmh = kmh;
+        sh.tripKm += kmh * navDt / 3600.f;
+        if (kmh > sh.maxKmh) sh.maxKmh = kmh;
+      } else if (sh.nav == NAV_LIVE) {
         float kmh = f.speedMs * 3.6f;
         if (kmh < TRIP_MIN_KMH) kmh = 0;
         sh.speedKmh = kmh;
@@ -347,6 +357,7 @@ void setup() {
 
   xTaskCreatePinnedToCore(sensorTask, "sensors", 6144, nullptr, 5, nullptr, 1);
   xTaskCreatePinnedToCore(renderTask, "render", 8192, nullptr, 3, nullptr, 0);
+  obd::begin();   // BLE central: OBD adapter (no flash access)
 }
 
 void loop() { vTaskDelay(portMAX_DELAY); }

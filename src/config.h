@@ -21,6 +21,12 @@
 #define TRIP_MIN_KMH         2.0f    // below this, speed counts as 0 (GPS jitter when parked)
 #define MAX_SPEED_ACC_KMH    5.0f    // max speed only from fixes with speed accuracy better than this
 
+// OBD-II BLE adapter (ELM327, e.g. Vgate iOS-Vlink): advertised name contains one of these (lower case)
+#define OBD_NAME_KEYS        {"vlink", "obd", "icar", "elm327"}
+#define OBD_CMD_TIMEOUT_MS   1500    // one PID request (K-line can take ~300 ms)
+#define OBD_SEARCH_TIMEOUT_MS 15000  // first request: the adapter tries every protocol
+#define OBD_RESCAN_MS        3000    // pause between scans when no adapter was found
+
 // Tilt filter. Accelerating/braking briefly shows up as pitch; that is by design.
 #define TILT_GYRO_CARRY      1       // 1 = gyro turns the reading instantly, accel keeps it true (recommended)
                                      // 0 = accel only; gyro just tells the filter when to follow faster
