@@ -4,6 +4,7 @@
 //  /incl/level_a|b.txt       level reference (mount orientation)
 //  /incl/state_a|b.txt       peaks, max speed, trip, log counter
 //  /incl/logs/NNNNN.csv      drive log, one file per power-up
+//  /incl/obd.txt             OBD adapter diagnostics (connection, protocol, supported PIDs)
 //
 // Unlike the internal flash, the SD card can be written while the display runs.
 // Records are written alternately to two files with a sequence number and a
@@ -33,4 +34,7 @@ bool saveState(const PersistState& s);
 bool logOpen(uint32_t no, const char* header);
 bool logWrite(const char* line);   // buffered
 void logSync();                    // push buffered rows to the card (call every few seconds)
+
+// Append text to /incl/<name> (rotated to <name>.old above 512 KB).
+bool appendText(const char* name, const char* text, size_t len);
 }  // namespace storage

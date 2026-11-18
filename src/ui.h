@@ -24,6 +24,7 @@ struct UiState {
   bool  testPattern = false;            // display diagnostics (serial 'p')
   // GPS speed screen
   uint8_t nav = NAV_NO_PHONE;           // NavState
+  const char* obdNote = nullptr;        // OBD adapter state while it isn't supplying speed (null = none)
   float speedKmh = -1;                  // <0 = no fresh data
   float courseDeg = -1;                 // 0..360, <0 = unknown
   float maxKmh = 0, tripKm = 0;

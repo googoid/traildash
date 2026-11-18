@@ -4,12 +4,51 @@
 #include <Arduino.h>
 #include <NimBLEDevice.h>
 #include <ctype.h>
+#include <stdarg.h>
 #include <string.h>
 
 namespace obd {
 
 static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 static Data data;
+
+// ------------------------------------------------------------------ diagnostics log
+// Everything about the connection goes to Serial and into a buffer that the SD task
+// appends to /incl/obd.txt, so a test drive without a laptop can be read afterwards.
+static constexpr size_t LOG_BUF = 4096;
+static char* logBuf = nullptr;   // PSRAM (internal RAM is short), allocated in begin()
+static size_t logLen = 0;   // guarded by mux
+
+static void olog(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
+static void olog(const char* fmt, ...) {
+  char line[256];
+  va_list ap;
+  va_start(ap, fmt);
+  int n = vsnprintf(line, sizeof line, fmt, ap);
+  va_end(ap);
+  if (n <= 0) return;
+  if (n > (int)sizeof line - 1) n = sizeof line - 1;
+  Serial.print(line);
+  char ts[16];
+  int t = snprintf(ts, sizeof ts, "%8.1f ", millis() * 1e-3f);
+  portENTER_CRITICAL(&mux);
+  if (logBuf && logLen + t + n < LOG_BUF) {   // full: drop (the SD task empties it every few seconds)
+    memcpy(logBuf + logLen, ts, t);
+    memcpy(logBuf + logLen + t, line, n);
+    logLen += t + n;
+  }
+  portEXIT_CRITICAL(&mux);
+}
+
+size_t takeLog(char* out, size_t size) {
+  portENTER_CRITICAL(&mux);
+  size_t n = logLen < size ? logLen : size;
+  memcpy(out, logBuf, n);
+  memmove(logBuf, logBuf + n, logLen - n);
+  logLen -= n;
+  portEXIT_CRITICAL(&mux);
+  return n;
+}
 
 static void setState(State s) {
   portENTER_CRITICAL(&mux);
@@ -50,7 +89,7 @@ class ScanCb : public NimBLEScanCallbacks {
   void onResult(const NimBLEAdvertisedDevice* d) override {
     if (found || !d->haveName()) return;
     if (!nameMatches(d->getName())) return;
-    Serial.printf("[obd] found \"%s\" %s rssi %d\n", d->getName().c_str(),
+    olog("[obd] found \"%s\" %s rssi %d\n", d->getName().c_str(),
                   d->getAddress().toString().c_str(), d->getRSSI());
     foundAddr = d->getAddress();
     found = true;
@@ -77,9 +116,9 @@ static bool findChars() {
   const NimBLERemoteCharacteristic* chrRx = nullptr;
   for (auto* svc : client->getServices(true)) {
     std::string su = svc->getUUID().toString();
-    Serial.printf("[obd]  service %s\n", su.c_str());
+    olog("[obd]  service %s\n", su.c_str());
     for (auto* c : svc->getCharacteristics(true)) {
-      Serial.printf("[obd]    char %s%s%s%s%s\n", c->getUUID().toString().c_str(),
+      olog("[obd]    char %s%s%s%s%s\n", c->getUUID().toString().c_str(),
                     c->canNotify() ? " notify" : "", c->canIndicate() ? " indicate" : "",
                     c->canWrite() ? " write" : "", c->canWriteNoResponse() ? " write-nr" : "");
     }
@@ -94,8 +133,8 @@ static bool findChars() {
     }
     if (r && t && !chrRx) { chrRx = r; chrTx = t; }   // keep listing the rest for the log
   }
-  if (!chrRx || !chrTx) { Serial.println("[obd] no UART characteristics found"); return false; }
-  Serial.printf("[obd] rx %s  tx %s\n", chrRx->getUUID().toString().c_str(), chrTx->getUUID().toString().c_str());
+  if (!chrRx || !chrTx) { olog("[obd] no UART characteristics found\n"); return false; }
+  olog("[obd] rx %s  tx %s\n", chrRx->getUUID().toString().c_str(), chrTx->getUUID().toString().c_str());
   return chrRx->subscribe(chrRx->canNotify(), onNotify);
 }
 
@@ -179,35 +218,37 @@ static bool isSupported(uint8_t pid) {
 }
 
 // 0100 (and 0120 if announced): which PIDs the engine computer supports.
-static bool querySupported(uint32_t timeoutMs) {
+static bool querySupported(uint32_t timeoutMs, bool verbose) {
   char r[256];
   uint8_t b[4];
   memset(supported, 0, sizeof supported);
   if (!cmd("0100", r, sizeof r, timeoutMs)) return false;
   if (!parse01(r, 0x00, b, 4)) {
-    Serial.printf("[obd] 0100 -> \"%s\"\n", r);
+    if (verbose) olog("[obd] 0100 -> \"%s\"\n", r);
     return false;
   }
   memcpy(supported, b, 4);
   if (b[3] & 0x01) {
     if (cmd("0120", r, sizeof r) && parse01(r, 0x20, b, 4)) memcpy(supported + 4, b, 4);
   }
-  Serial.print("[obd] supported PIDs:");
+  char list[200];
+  size_t k = 0;
   for (int p = 1; p <= 64; p++)
-    if (isSupported(p)) Serial.printf(" %02X", p);
-  Serial.println();
+    if (isSupported(p)) k += snprintf(list + k, sizeof list - k, " %02X", p);
+  list[k] = 0;
+  olog("[obd] supported PIDs:%s\n", list);
   return true;
 }
 
 static bool elmInit() {
   char r[256];
   // ATZ resets the adapter; it answers with its version string
-  if (!cmd("ATZ", r, sizeof r, 3000)) { Serial.println("[obd] ATZ: no prompt"); return false; }
-  Serial.printf("[obd] ATZ -> \"%s\"\n", r);
+  if (!cmd("ATZ", r, sizeof r, 3000)) { olog("[obd] ATZ: no prompt\n"); return false; }
+  olog("[obd] ATZ -> \"%s\"\n", r);
   vTaskDelay(pdMS_TO_TICKS(200));
   static const char* setup[] = {"ATE0", "ATL0", "ATS0", "ATH0", "ATAT1", "ATSP0"};
   for (const char* c : setup) {
-    if (!cmd(c, r, sizeof r)) { Serial.printf("[obd] %s: no prompt\n", c); return false; }
+    if (!cmd(c, r, sizeof r)) { olog("[obd] %s: no prompt\n", c); return false; }
   }
   return true;
 }
@@ -256,6 +297,7 @@ static void session() {
   char r[64];
   int fails = 0;
   bool live = false;
+  int attempts = 0;   // protocol searches without an answer (logged first and every 20th)
   uint32_t lastLog = 0;
   int slow = 0;
   static const uint8_t slowPids[] = {0x05, 0x0F, 0x04, 0x11};
@@ -263,10 +305,12 @@ static void session() {
   while (client->isConnected()) {
     if (!live) {
       setState(OBD_INIT);
-      Serial.println("[obd] searching protocol (0100)...");
-      if (!querySupported(OBD_SEARCH_TIMEOUT_MS)) {
+      bool verbose = attempts % 20 == 0;
+      if (verbose) olog("[obd] searching protocol (0100)...\n");
+      if (!querySupported(OBD_SEARCH_TIMEOUT_MS, verbose)) {
         setState(OBD_NO_ECU);
-        Serial.println("[obd] no answer from the car - ignition on?");
+        if (verbose) olog("[obd] no answer from the car - ignition on? (attempt %d)\n", attempts + 1);
+        attempts++;
         for (int i = 0; i < 30 && client->isConnected(); i++) vTaskDelay(pdMS_TO_TICKS(100));
         continue;
       }
@@ -277,9 +321,11 @@ static void session() {
         data.protocol = (uint8_t)hexv(*p);
         portEXIT_CRITICAL(&mux);
       }
-      if (cmd("ATDP", r, sizeof r)) Serial.printf("[obd] protocol %u: %s\n", data.protocol, r);
+      if (cmd("ATDP", r, sizeof r)) olog("[obd] protocol %u: %s\n", data.protocol, r);
+      if (cmd("ATRV", r, sizeof r)) olog("[obd] adapter voltage %s\n", r);
       live = true;
       fails = 0;
+      attempts = 0;
       setState(OBD_LIVE);
     }
 
@@ -291,7 +337,7 @@ static void session() {
 
     fails = ok ? 0 : fails + 1;
     if (fails >= 5) {   // car stopped answering (engine off?) -> search again
-      Serial.println("[obd] car stopped answering");
+      olog("[obd] car stopped answering\n");
       live = false;
       continue;
     }
@@ -319,14 +365,14 @@ static void task(void*) {
       client->setConnectTimeout(5000);
     }
     if (!client->connect(foundAddr)) {
-      Serial.println("[obd] connect failed");
+      olog("[obd] connect failed\n");
       vTaskDelay(pdMS_TO_TICKS(2000));
       continue;
     }
-    Serial.printf("[obd] connected, MTU %u\n", client->getMTU());
+    olog("[obd] connected, MTU %u\n", client->getMTU());
     if (findChars() && elmInit()) session();
     if (client->isConnected()) client->disconnect();
-    Serial.println("[obd] disconnected");
+    olog("[obd] disconnected\n");
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
@@ -334,6 +380,7 @@ static void task(void*) {
 // Stack in PSRAM (internal RAM is short). The task does no flash access itself; while the
 // display pauses for a flash write (no SD card) it is simply not scheduled.
 void begin() {
+  logBuf = (char*)heap_caps_malloc(LOG_BUF, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   xTaskCreatePinnedToCoreWithCaps(task, "obd", 6144, nullptr, 2, nullptr, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }
 

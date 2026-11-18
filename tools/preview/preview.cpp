@@ -52,11 +52,16 @@ int main(int argc, char** argv) {
     {"speed",        mk(SCREEN_SPEED, 2.f, 1.f)},
     {"speed_nophone",mk(SCREEN_SPEED, 2.f, 1.f)},
     {"speed_hold",   mk(SCREEN_SPEED, 2.f, 1.f)},
+    {"speed_obd",    mk(SCREEN_SPEED, 2.f, 1.f)},
+    {"speed_obd_wait", mk(SCREEN_SPEED, 2.f, 1.f)},
   };
   shots[4].s.holdProgress = 0.62f;
   shots[5].s.toast = "LEVEL SET"; shots[5].s.toastAge = 1.0f;
   for (int i = 6; i <= 8; i++) { shots[i].s.maxKmh = 112; shots[i].s.tripKm = 48.6f; }
   shots[6].s.nav = NAV_LIVE; shots[6].s.speedKmh = 87.4f; shots[6].s.courseDeg = 47.f;
+  for (int i = 9; i <= 10; i++) { shots[i].s.maxKmh = 112; shots[i].s.tripKm = 48.6f; }
+  shots[9].s.nav = NAV_OBD; shots[9].s.speedKmh = 64; shots[9].s.courseDeg = 47.f;
+  shots[10].s.nav = NAV_LIVE; shots[10].s.speedKmh = 63; shots[10].s.courseDeg = 47.f; shots[10].s.obdNote = "OBD NO ANSWER";
   shots[8].s.nav = NAV_LIVE; shots[8].s.speedKmh = 0; shots[8].s.courseDeg = 312.f; shots[8].s.holdProgress = 0.45f;
 
   for (auto& sh : shots) {

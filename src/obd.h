@@ -4,6 +4,7 @@
 // ELM327 with automatic protocol search and polls standard mode-01 PIDs.
 #pragma once
 #include <stdint.h>
+#include <stddef.h>
 
 namespace obd {
 
@@ -33,5 +34,7 @@ void begin();
 Data latest();
 // True when `ms` (one of the *Ms fields) is recent enough to show.
 bool fresh(uint32_t ms, uint32_t maxAgeMs = 3000);
+// Take up to `size` bytes of pending diagnostics text (connection, protocol, supported PIDs).
+size_t takeLog(char* out, size_t size);
 
 }  // namespace obd

@@ -37,6 +37,7 @@ struct Shared {
   volatile bool fbCheck = false;
   // GPS (from the phone)
   volatile uint8_t nav = NAV_NO_PHONE;
+  const char* volatile obdNote = nullptr;
   volatile float speedKmh = -1;   // <0 = no fresh data
   volatile float courseDeg = -1;  // <0 = unknown
   volatile float maxKmh = 0;
@@ -166,6 +167,10 @@ static void sensorTask(void*) {
       lastNavMs = now;
       obd::Data od = obd::latest();
       bool obdSpeed = od.state == obd::OBD_LIVE && obd::fresh(od.speedMs, NAV_STALE_MS);
+      sh.obdNote = od.state == obd::OBD_CONNECTING ? "OBD CONNECTING"
+                 : od.state == obd::OBD_INIT       ? "OBD STARTING"
+                 : od.state == obd::OBD_NO_ECU     ? "OBD NO ANSWER"
+                 : od.state == obd::OBD_LIVE && !obdSpeed ? "OBD NO SPEED" : nullptr;
       if (obdSpeed) sh.nav = NAV_OBD;
       else if (!blelink::connected()) sh.nav = NAV_NO_PHONE;
       else sh.nav = fresh && f.speedValid ? NAV_LIVE : NAV_NO_FIX;
@@ -283,6 +288,7 @@ static void renderTask(void*) {
     st.debug = sh.debug;
     st.testPattern = sh.testPattern;
     st.nav = sh.nav;
+    st.obdNote = sh.obdNote;
     st.speedKmh = sh.speedKmh;
     st.maxKmh = sh.maxKmh;
     st.tripKm = sh.tripKm;
@@ -364,7 +370,12 @@ static void storageTask(void*) {
   if (cfg.log)
     storage::logOpen(saved.logNo,
                      "t_s,pitch,roll,speed_kmh,speed_src,course,rpm,coolant_c,intake_c,load_pct,throttle_pct,obd_volts\n");
-  uint32_t lastSave = millis(), lastLog = 0, lastSync = millis();
+  {
+    char b[48];
+    int n = snprintf(b, sizeof b, "\n=== power-up, drive log %05lu ===\n", (unsigned long)saved.logNo);
+    storage::appendText("obd.txt", b, n);
+  }
+  uint32_t lastSave = millis(), lastLog = 0, lastSync = millis(), lastObd = 0;
   const uint32_t logMs = (uint32_t)(cfg.logIntervalS * 1000);
   for (;;) {
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -406,6 +417,12 @@ static void storageTask(void*) {
       storage::logWrite(line);
     }
     if (now - lastSync >= LOG_SYNC_S * 1000) { lastSync = now; storage::logSync(); }
+    if (now - lastObd >= 2000) {
+      lastObd = now;
+      static char* ob = (char*)heap_caps_malloc(4096, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+      size_t n = ob ? obd::takeLog(ob, 4096) : 0;
+      if (n) storage::appendText("obd.txt", ob, n);
+    }
   }
 }
 

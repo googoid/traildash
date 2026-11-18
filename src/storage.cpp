@@ -173,6 +173,22 @@ void logSync() {
   fsync(fileno(logF));   // updates the file size in the directory: rows survive a power cut
 }
 
+bool appendText(const char* name, const char* text, size_t len) {
+  if (!ok) return false;
+  char path[48], old[56];
+  snprintf(path, sizeof path, SDDIR "/%s", name);
+  struct stat st;
+  if (stat(path, &st) == 0 && st.st_size > 512 * 1024) {
+    snprintf(old, sizeof old, "%s.old", path);
+    remove(old);
+    rename(path, old);
+  }
+  FILE* f = fopen(path, "a");
+  if (!f) return false;
+  bool good = fwrite(text, 1, len, f) == len;
+  return fclose(f) == 0 && good;
+}
+
 // ------------------------------------------------------------------ mount + config
 bool begin() {
   // D3 must be high for SD (not SPI) mode; board::begin() already set EXIO4 high.
@@ -185,15 +201,18 @@ bool begin() {
   Serial.printf("[sd] card %llu MB, %llu MB used\n", SD_MMC.cardSize() >> 20, SD_MMC.usedBytes() >> 20);
   mkdir(SDDIR, 0777);
 
-  static char buf[2048];
+  const size_t bufSize = 2048;
+  char* buf = (char*)heap_caps_malloc(bufSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!buf) return true;
   const char* path = SDDIR "/config.txt";
-  if (readFile(path, buf, sizeof buf)) {
+  if (readFile(path, buf, bufSize)) {
     settings::apply(buf, [](const char* k) { Serial.printf("[sd] config.txt: unknown setting \"%s\"\n", k); });
     Serial.println("[sd] config.txt loaded");
   } else {
-    settings::format(buf, sizeof buf);
+    settings::format(buf, bufSize);
     Serial.printf("[sd] config.txt %s\n", writeFile(path, buf) ? "written with defaults" : "write FAILED");
   }
+  heap_caps_free(buf);
   return true;
 }
 
