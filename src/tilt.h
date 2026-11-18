@@ -32,6 +32,10 @@ bool levelCalibrationBusy();
 bool isLevelCalibrated();               // a level reference has been stored in flash
 bool hasUnsavedLevel();                 // new reference waiting to be written to flash
 void commitSave();                      // write it — only while the display is paused (board::displayPause)
+// SD card storage (see storage.h): the reference as 9 floats (forward, left, up axes)
+bool takePendingLevel(float m[9]);      // new reference to store, clears the pending flag
+void getMount(float m[9]);
+void setMount(const float m[9]);        // loaded reference — call before the sensor task starts
 
 void rawGravity(float& x, float& y, float& z);  // sensor-frame filtered accel (debug)
 

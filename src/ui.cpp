@@ -1,6 +1,7 @@
 #include "ui.h"
 #include "gfx.h"
 #include "config.h"
+#include "settings.h"
 #include <string.h>
 #include <initializer_list>
 #include <stdio.h>
@@ -246,8 +247,8 @@ static void drawScale(float centerDeg, float sign, float warn, float danger) {
 static void buildDual() {
   gfx.setTarget(bgDual);
   drawBgBase();
-  drawScale(0, 1, ROLL_WARN_DEG, ROLL_DANGER_DEG);
-  drawScale(180, 1, PITCH_WARN_DEG, PITCH_DANGER_DEG);
+  drawScale(0, 1, cfg.rollWarnDeg, cfg.rollDangerDeg);
+  drawScale(180, 1, cfg.pitchWarnDeg, cfg.pitchDangerDeg);
   // centre divider
   gfx.line(64, 240, 416, 240, 1.4f, Paint(0x223140));
   float diamond[8] = {240, 235, 245, 240, 240, 245, 235, 240};
@@ -266,9 +267,9 @@ static void buildBubble() {
   drawBgBase();
   const float K = 4.6f;  // px per degree
   // tolerance zones as ellipses (roll on x, pitch on y)
-  ellipseRing(CX, CY, ROLL_WARN_DEG * K - 1.2f, PITCH_WARN_DEG * K - 1.2f, ROLL_WARN_DEG * K + 1.2f, PITCH_WARN_DEG * K + 1.2f, Paint(AMBER, 0.55f));
-  ellipseRing(CX, CY, ROLL_DANGER_DEG * K - 1.2f, PITCH_DANGER_DEG * K - 1.2f, ROLL_DANGER_DEG * K + 1.2f, PITCH_DANGER_DEG * K + 1.2f, Paint(RED, 0.55f));
-  ellipseRing(CX, CY, 0, 0, ROLL_WARN_DEG * K, PITCH_WARN_DEG * K, Paint(GREEN, 0.05f));
+  ellipseRing(CX, CY, cfg.rollWarnDeg * K - 1.2f, cfg.pitchWarnDeg * K - 1.2f, cfg.rollWarnDeg * K + 1.2f, cfg.pitchWarnDeg * K + 1.2f, Paint(AMBER, 0.55f));
+  ellipseRing(CX, CY, cfg.rollDangerDeg * K - 1.2f, cfg.pitchDangerDeg * K - 1.2f, cfg.rollDangerDeg * K + 1.2f, cfg.pitchDangerDeg * K + 1.2f, Paint(RED, 0.55f));
+  ellipseRing(CX, CY, 0, 0, cfg.rollWarnDeg * K, cfg.pitchWarnDeg * K, Paint(GREEN, 0.05f));
   for (int d = 10; d <= 40; d += 10) {
     float r = d * K;
     gfx.ring(CX, CY, r - 0.7f, r + 0.7f, Paint(0x2B3846));
@@ -329,7 +330,7 @@ bool begin(void* (*alloc)(size_t), void (*flush)(void*, size_t)) {
 }
 
 bool inDanger(const UiState& s) {
-  return fabsf(s.roll) >= ROLL_DANGER_DEG || fabsf(s.pitch) >= PITCH_DANGER_DEG;
+  return fabsf(s.roll) >= cfg.rollDangerDeg || fabsf(s.pitch) >= cfg.pitchDangerDeg;
 }
 
 // ------------------------------------------------------------------ screens
@@ -349,8 +350,8 @@ static void peakMark(float deg) {
 
 static void renderDual(const UiState& s) {
   const float roll = clampf(s.roll, -52, 52), pitch = clampf(s.pitch, -52, 52);
-  uint32_t rc = sevColor(s.roll, ROLL_WARN_DEG, ROLL_DANGER_DEG);
-  uint32_t pc = sevColor(s.pitch, PITCH_WARN_DEG, PITCH_DANGER_DEG);
+  uint32_t rc = sevColor(s.roll, cfg.rollWarnDeg, cfg.rollDangerDeg);
+  uint32_t pc = sevColor(s.pitch, cfg.pitchWarnDeg, cfg.pitchDangerDeg);
 
   // ---- ROLL (top) ----
   gfx.arc(CX, CY, 222, 228, fminf(0, roll), fmaxf(0, roll), Paint(rc));
@@ -383,9 +384,9 @@ static void renderDual(const UiState& s) {
   // ---- numbers ----
   char b[12];
   fmtDeg(b, s.roll);
-  gfx.text(font_huge, b, CX + 10, 230, fabsf(s.roll) >= ROLL_WARN_DEG ? rc : TXT, 0);
+  gfx.text(font_huge, b, CX + 10, 230, fabsf(s.roll) >= cfg.rollWarnDeg ? rc : TXT, 0);
   fmtDeg(b, s.pitch);
-  gfx.text(font_huge, b, CX + 10, 318, fabsf(s.pitch) >= PITCH_WARN_DEG ? pc : TXT, 0);
+  gfx.text(font_huge, b, CX + 10, 318, fabsf(s.pitch) >= cfg.pitchWarnDeg ? pc : TXT, 0);
 
   const char* rdir = s.roll > 0.5f ? "RIGHT" : (s.roll < -0.5f ? "LEFT" : "LEVEL");
   const char* pdir = s.pitch > 0.5f ? "UP" : (s.pitch < -0.5f ? "DOWN" : "LEVEL");
@@ -412,8 +413,8 @@ static void renderBubble(const UiState& s) {
   float d = sqrtf(bx * bx + by * by);
   if (d > 196) { bx *= 196 / d; by *= 196 / d; }
   bx += CX; by += CY;
-  float sr = fmaxf(fabsf(s.roll) / ROLL_DANGER_DEG, fabsf(s.pitch) / PITCH_DANGER_DEG);
-  uint32_t c = sr >= 1 ? RED : (fabsf(s.roll) >= ROLL_WARN_DEG || fabsf(s.pitch) >= PITCH_WARN_DEG ? AMBER : GREEN);
+  float sr = fmaxf(fabsf(s.roll) / cfg.rollDangerDeg, fabsf(s.pitch) / cfg.pitchDangerDeg);
+  uint32_t c = sr >= 1 ? RED : (fabsf(s.roll) >= cfg.rollWarnDeg || fabsf(s.pitch) >= cfg.pitchWarnDeg ? AMBER : GREEN);
 
   // line from centre to bubble
   gfx.line(CX, CY, bx, by, 1.6f, Paint(c, 0.45f));
@@ -427,10 +428,10 @@ static void renderBubble(const UiState& s) {
   char v[12];
   gfx.text(font_tiny, "PITCH", 186, 418, DIM, 0);
   fmtDeg(v, s.pitch);
-  gfx.text(font_med, v, 186, 446, fabsf(s.pitch) >= PITCH_WARN_DEG ? sevColor(s.pitch, PITCH_WARN_DEG, PITCH_DANGER_DEG) : TXT, 0);
+  gfx.text(font_med, v, 186, 446, fabsf(s.pitch) >= cfg.pitchWarnDeg ? sevColor(s.pitch, cfg.pitchWarnDeg, cfg.pitchDangerDeg) : TXT, 0);
   gfx.text(font_tiny, "ROLL", 294, 418, DIM, 0);
   fmtDeg(v, s.roll);
-  gfx.text(font_med, v, 294, 446, fabsf(s.roll) >= ROLL_WARN_DEG ? sevColor(s.roll, ROLL_WARN_DEG, ROLL_DANGER_DEG) : TXT, 0);
+  gfx.text(font_med, v, 294, 446, fabsf(s.roll) >= cfg.rollWarnDeg ? sevColor(s.roll, cfg.rollWarnDeg, cfg.rollDangerDeg) : TXT, 0);
 }
 
 static void peakCell(float cx, float cy, const char* label, float v, float warn, float danger, int dir) {
@@ -450,10 +451,10 @@ static void renderPeaks(const UiState& s) {
   gfx.line(170, 108, 310, 108, 1.2f, Paint(ACCENT, 0.35f));
   gfx.line(CX, 140, CX, 380, 1.2f, Paint(FAINT));
   gfx.line(110, 260, 370, 260, 1.2f, Paint(FAINT));
-  peakCell(165, 200, "ROLL LEFT", s.peakRollL, ROLL_WARN_DEG, ROLL_DANGER_DEG, -1);
-  peakCell(315, 200, "ROLL RIGHT", s.peakRollR, ROLL_WARN_DEG, ROLL_DANGER_DEG, 1);
-  peakCell(165, 320, "NOSE UP", s.peakPitchUp, PITCH_WARN_DEG, PITCH_DANGER_DEG, -1);
-  peakCell(315, 320, "NOSE DOWN", s.peakPitchDn, PITCH_WARN_DEG, PITCH_DANGER_DEG, 1);
+  peakCell(165, 200, "ROLL LEFT", s.peakRollL, cfg.rollWarnDeg, cfg.rollDangerDeg, -1);
+  peakCell(315, 200, "ROLL RIGHT", s.peakRollR, cfg.rollWarnDeg, cfg.rollDangerDeg, 1);
+  peakCell(165, 320, "NOSE UP", s.peakPitchUp, cfg.pitchWarnDeg, cfg.pitchDangerDeg, -1);
+  peakCell(315, 320, "NOSE DOWN", s.peakPitchDn, cfg.pitchWarnDeg, cfg.pitchDangerDeg, 1);
   gfx.text(font_tiny, "DOUBLE-TAP TO RESET", CX, 412, DIM, 0);
   gfx.text(font_tiny, s.levelSet ? "LEVEL REFERENCE SET" : "LEVEL NOT SET  -  HOLD 2 s", CX, 432,
            s.levelSet ? 0x4E5D6B : AMBER, 0);

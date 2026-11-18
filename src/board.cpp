@@ -177,6 +177,9 @@ static void st7701Init() {
   stCmd(0x29);           // display on
 
   exio(EXIO_LCD_CS, true);
+  // Done with the panel's SPI for good: release GPIO1/2 for the SD card (same pins).
+  spi_bus_remove_device(spi);
+  spi_bus_free(SPI2_HOST);
 }
 
 // ============================================================== GDMA memory copies

@@ -18,6 +18,8 @@
 #include "gfx.h"
 #include "ble.h"
 #include "obd.h"
+#include "settings.h"
+#include "storage.h"
 
 // ------------------------------------------------------------------ shared state
 struct Shared {
@@ -187,14 +189,14 @@ static void sensorTask(void*) {
       else if (!fresh) sh.courseDeg = -1;   // keep last heading while stopped, drop it when data stops
       lastNavSeq = f.seq;
 
-#if BUZZER_ALARM
-      float ar = fabsf(pkRoll), ap = fabsf(pkPitch);
-      if (!alarm && (ar >= ROLL_DANGER_DEG || ap >= PITCH_DANGER_DEG)) alarm = true;
-      if (alarm && ar < ROLL_DANGER_DEG - 2 && ap < PITCH_DANGER_DEG - 2) alarm = false;
-      bool beep = alarm && !sh.leveling && (now % 800) < 70;
-      static bool beeping = false;
-      if (beep != beeping) { board::buzzer(beep); beeping = beep; }
-#endif
+      if (cfg.buzzer) {
+        float ar = fabsf(pkRoll), ap = fabsf(pkPitch);
+        if (!alarm && (ar >= cfg.rollDangerDeg || ap >= cfg.pitchDangerDeg)) alarm = true;
+        if (alarm && ar < cfg.rollDangerDeg - 2 && ap < cfg.pitchDangerDeg - 2) alarm = false;
+        bool beep = alarm && !sh.leveling && (now % 800) < 70;
+        static bool beeping = false;
+        if (beep != beeping) { board::buzzer(beep); beeping = beep; }
+      }
     }
 
     // serial debug: 2 Hz
@@ -214,6 +216,13 @@ static void sensorTask(void*) {
       else if (c == 'r') resetPeaks();
       else if (c >= '0' && c < '0' + SCREEN_COUNT) sh.screen = c - '0';
       else if (c == 't') resetTrip();
+      else if (c == 'm')
+        Serial.printf("[mem] internal free %u KB (largest %u KB), DMA free %u KB (largest %u KB), PSRAM %u KB\n",
+                      (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
+                      (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024),
+                      (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA) / 1024),
+                      (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA) / 1024),
+                      (unsigned)(ESP.getFreePsram() / 1024));
     }
   }
 }
@@ -251,7 +260,8 @@ static void renderTask(void*) {
   float fpsAcc = 0; int fpsN = 0;
 
   for (;;) {
-    if (tilt::hasUnsavedLevel()) { saveLevel(); backlightOff = true; }
+    // without an SD card the level goes to internal flash (display must pause for that)
+    if (!storage::mounted() && tilt::hasUnsavedLevel()) { saveLevel(); backlightOff = true; }
     uint32_t nowUs = micros();
     float dt = (nowUs - last) * 1e-6f;
     last = nowUs;
@@ -291,7 +301,7 @@ static void renderTask(void*) {
     board::present();
     if (backlightOff) {   // back on once a complete frame is in the new buffers
       board::waitFrame();
-      board::setBacklight(BACKLIGHT_PERCENT);
+      board::setBacklight(cfg.backlight);
       backlightOff = false;
     }
 
@@ -307,6 +317,95 @@ static void renderTask(void*) {
 
     fpsAcc += dt; fpsN++;
     if (fpsAcc > 1.f) { sh.fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
+  }
+}
+
+// ------------------------------------------------------------------ SD card
+static PersistState saved;   // what is on the card now
+
+static PersistState currentState() {
+  PersistState p = saved;
+  p.peakRollL = sh.peakRollL; p.peakRollR = sh.peakRollR;
+  p.peakPitchUp = sh.peakPitchUp; p.peakPitchDn = sh.peakPitchDn;
+  p.maxKmh = sh.maxKmh; p.tripKm = sh.tripKm;
+  return p;
+}
+
+static void loadFromSd() {
+  if (!storage::begin()) return;
+  float m[9];
+  if (storage::loadLevel(m)) {
+    tilt::setMount(m);
+    sh.levelSet = true;
+    Serial.println("[sd] level reference loaded");
+  } else if (sh.levelSet) {   // first run with a card: copy the one from flash
+    tilt::getMount(m);
+    Serial.printf("[sd] level reference copied from flash%s\n", storage::saveLevel(m) ? "" : " - FAILED");
+  }
+  if (storage::loadState(saved)) {
+    sh.peakRollL = saved.peakRollL; sh.peakRollR = saved.peakRollR;
+    sh.peakPitchUp = saved.peakPitchUp; sh.peakPitchDn = saved.peakPitchDn;
+    sh.maxKmh = saved.maxKmh; sh.tripKm = saved.tripKm;
+    Serial.printf("[sd] state loaded: trip %.1f km, max %.0f km/h\n", saved.tripKm, saved.maxKmh);
+  }
+  if (cfg.log) {
+    saved.logNo++;
+    storage::saveState(saved);
+  }
+}
+
+static void fmtOpt(char* b, size_t n, bool ok, const char* fmt, float v) {
+  if (ok) snprintf(b, n, fmt, v); else b[0] = 0;
+}
+
+// Low priority: level reference, peaks/trip, drive log. SD writes can take
+// tens of ms, so none of this runs in the sensor or render task.
+static void storageTask(void*) {
+  if (cfg.log)
+    storage::logOpen(saved.logNo,
+                     "t_s,pitch,roll,speed_kmh,speed_src,course,rpm,coolant_c,intake_c,load_pct,throttle_pct,obd_volts\n");
+  uint32_t lastSave = millis(), lastLog = 0, lastSync = millis();
+  const uint32_t logMs = (uint32_t)(cfg.logIntervalS * 1000);
+  for (;;) {
+    vTaskDelay(pdMS_TO_TICKS(100));
+    uint32_t now = millis();
+
+    float m[9];
+    if (tilt::takePendingLevel(m)) {
+      bool ok = storage::saveLevel(m);
+      Serial.printf("[sd] level reference saved%s\n", ok ? "" : " - FAILED");
+      if (!ok) showToast("SD WRITE FAILED");
+    }
+
+    PersistState cur = currentState();
+    bool peaks = cur.peakRollL != saved.peakRollL || cur.peakRollR != saved.peakRollR ||
+                 cur.peakPitchUp != saved.peakPitchUp || cur.peakPitchDn != saved.peakPitchDn;
+    bool trip = cur.maxKmh != saved.maxKmh || cur.tripKm != saved.tripKm;
+    if ((peaks && now - lastSave >= 2000) || (trip && now - lastSave >= STATE_SAVE_S * 1000)) {
+      if (storage::saveState(cur)) saved = cur;
+      else Serial.println("[sd] state save FAILED");
+      lastSave = now;
+    }
+
+    if (cfg.log && now - lastLog >= logMs) {
+      lastLog = now;
+      obd::Data o = obd::latest();
+      bool live = o.state == obd::OBD_LIVE;
+      char spd[8], crs[8], rpm[8], cool[8], intk[8], load[8], thr[8], volt[8], line[160];
+      fmtOpt(spd, sizeof spd, sh.speedKmh >= 0, "%.0f", sh.speedKmh);
+      fmtOpt(crs, sizeof crs, sh.courseDeg >= 0, "%.0f", sh.courseDeg);
+      fmtOpt(rpm, sizeof rpm, live && obd::fresh(o.rpmMs), "%.0f", o.rpm);
+      fmtOpt(cool, sizeof cool, live && obd::fresh(o.coolantMs, 10000), "%.0f", o.coolantC);
+      fmtOpt(intk, sizeof intk, live && obd::fresh(o.intakeMs, 10000), "%.0f", o.intakeC);
+      fmtOpt(load, sizeof load, live && obd::fresh(o.loadMs, 10000), "%.0f", o.loadPct);
+      fmtOpt(thr, sizeof thr, live && obd::fresh(o.throttleMs, 10000), "%.0f", o.throttlePct);
+      fmtOpt(volt, sizeof volt, live && obd::fresh(o.voltsMs, 20000), "%.1f", o.volts);
+      const char* src = sh.nav == NAV_OBD ? "obd" : sh.nav == NAV_LIVE ? "gps" : "";
+      snprintf(line, sizeof line, "%.1f,%.1f,%.1f,%s,%s,%s,%s,%s,%s,%s,%s,%s\n", now * 1e-3f, sh.pitch, sh.roll,
+               spd, src, crs, rpm, cool, intk, load, thr, volt);
+      storage::logWrite(line);
+    }
+    if (now - lastSync >= LOG_SYNC_S * 1000) { lastSync = now; storage::logSync(); }
   }
 }
 
@@ -343,10 +442,12 @@ void setup() {
                 (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA) / 1024),
                 (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA) / 1024));
   if (!board::displayBegin()) Serial.println("[boot] display init FAILED");
+  // SD card after the display (shares the panel's init SPI pins), before the UI (settings)
+  loadFromSd();
   if (!ui::begin(psAlloc, board::flushCache)) Serial.println("[boot] UI buffer alloc FAILED (PSRAM?)");
 
   showSplash("INCLINOMETER", "starting...", 0.05f);
-  board::setBacklight(BACKLIGHT_PERCENT);
+  board::setBacklight(cfg.backlight);
 
   touch::begin();
 
@@ -354,10 +455,18 @@ void setup() {
   delay(300);
 
   if (!sh.levelSet) showToast("HOLD 2 s TO SET LEVEL");
+  else if (!storage::mounted()) showToast("NO SD CARD");
 
   xTaskCreatePinnedToCore(sensorTask, "sensors", 6144, nullptr, 5, nullptr, 1);
   xTaskCreatePinnedToCore(renderTask, "render", 8192, nullptr, 3, nullptr, 0);
+  // Internal RAM is nearly all taken by the display (strips, bounce buffers, display list)
+  // and the BT controller. From here on, ordinary mallocs above 256 B (NimBLE client, FILE
+  // buffers, std::string...) go to PSRAM; DMA buffers ask for internal memory explicitly.
+  heap_caps_malloc_extmem_enable(256);
   obd::begin();   // BLE central: OBD adapter (no flash access)
+  // stack in PSRAM: this task never runs while flash is written (it only exists with a card)
+  if (storage::mounted())
+    xTaskCreatePinnedToCoreWithCaps(storageTask, "sd", 6144, nullptr, 1, nullptr, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }
 
 void loop() { vTaskDelay(portMAX_DELAY); }

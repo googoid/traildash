@@ -1,5 +1,6 @@
 #include "obd.h"
 #include "config.h"
+#include "settings.h"
 #include <Arduino.h>
 #include <NimBLEDevice.h>
 #include <ctype.h>
@@ -39,6 +40,7 @@ static volatile bool prompt = false;
 static bool nameMatches(const std::string& n) {
   std::string l = n;
   for (auto& c : l) c = tolower((unsigned char)c);
+  if (cfg.obdName[0] && l.find(cfg.obdName) != std::string::npos) return true;
   for (const char* key : OBD_NAME_KEYS)
     if (l.find(key) != std::string::npos) return true;
   return false;

@@ -44,8 +44,10 @@ Open `ios/InclinoLink.xcodeproj` in Xcode, pick your team under *Signing & Capab
 - The app finds the inclinometer (advertising as `Inclinometer`), remembers it, and from then on
   iOS reconnects automatically whenever the car powers up — also with the phone locked.
 - It sends speed + course about once per second; the device shows `--` after 3 s without data.
-- Max speed and trip distance are computed on the device (RAM only — they reset at power-up).
-  Distance is speed × time, so it isn't counted while the phone is disconnected.
+- Max speed and trip distance are computed on the device and kept on the SD card (without a card
+  they reset at power-up). Distance is speed × time, so it isn't counted while there is no speed source.
+- With an OBD-II BLE adapter (ELM327, e.g. Vgate iOS-Vlink) in the car, speed comes from the car
+  instead (status shows **OBD**); see `src/obd.cpp`.
 - GPS runs only while the inclinometer is connected. Set Location to **Always** so GPS can start
   when the device connects while the phone is locked.
 - iOS doesn't reopen a swiped-away app for Bluetooth. The in-app option *Restart after swipe-away*
@@ -54,9 +56,23 @@ Open `ios/InclinoLink.xcodeproj` in Xcode, pick your team under *Signing & Capab
 
 Protocol (service/characteristic UUIDs, 10-byte packet) is documented in `src/ble.h`.
 
-## Settings — `src/config.h`
+## Settings and SD card
 
-Warning/danger thresholds, buzzer on/off, backlight, filter tuning.
+`src/config.h` holds the defaults (and filter tuning). With a microSD card (FAT32) in the display,
+the user settings are in `/incl/config.txt` — written with the defaults on first start; edit it on a
+computer and restart. The card also stores:
+
+| File | Content |
+|---|---|
+| `/incl/config.txt` | warning/danger angles, buzzer, backlight, drive log on/off + interval, OBD adapter name |
+| `/incl/level_a.txt`, `level_b.txt` | level reference |
+| `/incl/state_a.txt`, `state_b.txt` | peak angles, max speed, trip, drive log counter |
+| `/incl/logs/NNNNN.csv` | drive log, one file per power-up: angles, speed + source, heading, OBD values |
+
+Records are written alternately to the `_a`/`_b` file with a sequence number and checksum, so a power
+cut during a write keeps the previous version. The drive log reaches the card every 10 s.
+Without a card the level reference falls back to internal flash (screen blinks while saving) and
+nothing else is kept. A level reference already in flash is copied to a new card automatically.
 
 ## How it works
 
@@ -72,7 +88,9 @@ Warning/danger thresholds, buzzer on/off, backlight, filter tuning.
   internal SRAM and moved to/from PSRAM by GDMA (the CPU path to PSRAM is too slow); strips whose
   content didn't change are skipped.
 - Flash is never accessed while the display runs (the panel interrupt reads PSRAM, which is
-  unavailable during flash operations) — the panel is stopped for a moment when the level reference is saved.
+  unavailable during flash operations) — without an SD card the panel is stopped for a moment when the
+  level reference is saved. The SD card (`storage.cpp`, 1-bit SDMMC on the panel's init-SPI pins, which
+  are released after display init) has no such restriction; it is written from a low-priority task.
 
 ## UI preview on a PC
 

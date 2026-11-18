@@ -4,6 +4,7 @@
 // ============================================================================
 
 // ---------------- user settings ----------------
+// These are defaults: /incl/config.txt on the SD card overrides them (see settings.cpp).
 #define ROLL_WARN_DEG        20.0f   // amber from here
 #define ROLL_DANGER_DEG      30.0f   // red + alarm from here
 #define PITCH_WARN_DEG       25.0f
@@ -14,6 +15,12 @@
 
 #define LONG_PRESS_MS        2000    // hold to set "level"
 #define DOUBLE_TAP_MS        350     // double-tap resets peak values
+
+// SD card
+#define LOG_ENABLED          1       // drive log CSV, one file per power-up
+#define LOG_INTERVAL_S       1.0f    // seconds between log rows
+#define LOG_SYNC_S           10      // rows reach the card at least this often (lost on power cut otherwise)
+#define STATE_SAVE_S         30      // trip/max speed saved at most this often (peaks: within 2 s)
 
 // GPS speed screen (data from the iPhone app over BLE)
 #define BLE_DEVICE_NAME      "Inclinometer"
@@ -59,6 +66,10 @@
 #define PIN_TOUCH_INT   16
 #define PIN_BAT_ADC     4
 #define PIN_BOOT_BTN    0
+// microSD, 1-bit SDMMC. CLK/CMD are the panel's init SPI pins (free after display init); D3 = EXIO4.
+#define PIN_SD_CLK      2
+#define PIN_SD_CMD      1
+#define PIN_SD_D0       42
 
 #define LCD_HSYNC 38
 #define LCD_VSYNC 39

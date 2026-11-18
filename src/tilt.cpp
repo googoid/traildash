@@ -228,6 +228,23 @@ void commitSave() {
   p.putBytes("mount", m, sizeof m);
   p.end();
 }
+bool takePendingLevel(float m[9]) {
+  if (!savePending) return false;
+  memcpy(m, pendingM, sizeof pendingM);
+  savePending = false;
+  return true;
+}
+
+void getMount(float m[9]) {
+  const float v[9] = {mF.x, mF.y, mF.z, mL.x, mL.y, mL.z, mU.x, mU.y, mU.z};
+  memcpy(m, v, sizeof v);
+}
+
+void setMount(const float m[9]) {
+  mF = {m[0], m[1], m[2]}; mL = {m[3], m[4], m[5]}; mU = {m[6], m[7], m[8]};
+  levelStored = true;
+}
+
 void rawGravity(float& x, float& y, float& z) { x = gOut.x; y = gOut.y; z = gOut.z; }
 
 }  // namespace tilt
