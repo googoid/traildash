@@ -37,4 +37,8 @@ void logSync();                    // push buffered rows to the card (call every
 
 // Append text to /incl/<name> (rotated to <name>.old above 512 KB).
 bool appendText(const char* name, const char* text, size_t len);
+
+// Serial access (laptop, no card reader): list the files, print the last `tail` bytes of one.
+void listFiles();
+void printFile(const char* name, size_t tail);
 }  // namespace storage

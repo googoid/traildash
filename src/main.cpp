@@ -119,6 +119,7 @@ struct PressTracker {
 // every 40 ms); each sample is filtered with its own sample period.
 static constexpr int MAX_BATCH = 16;
 
+static PersistState saved;   // what is on the card now
 static void sensorTask(void*) {
   PressTracker touchPress, btnPress;
   uint32_t lastUs = micros();
@@ -260,6 +261,21 @@ static void sensorTask(void*) {
                       (unsigned long)rs.packets, (unsigned long)rs.samples, (unsigned long)rs.lost,
                       (unsigned long)rs.overflow);
       }
+      else if (c == 's') storage::listFiles();
+      else if (c == 'o') storage::printFile("obd.txt", 32 * 1024);
+      else if (c == 'g') {   // newest drive log (the current one is still being written)
+        char name[24];
+        uint32_t no = saved.logNo;
+        for (int k = 0; k < 2 && no > 0; k++, no--) {
+          snprintf(name, sizeof name, "logs/%05lu.csv", (unsigned long)no);
+          storage::printFile(name, 8 * 1024);
+        }
+      }
+      else if (c == 'c') {   // "c<number>": that drive log
+        char name[24];
+        snprintf(name, sizeof name, "logs/%05ld.csv", Serial.parseInt());
+        storage::printFile(name, 256 * 1024);
+      }
       else if (c == 'm')
         Serial.printf("[mem] internal free %u KB (largest %u KB), DMA free %u KB (largest %u KB), PSRAM %u KB\n",
                       (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
@@ -367,7 +383,6 @@ static void renderTask(void*) {
 }
 
 // ------------------------------------------------------------------ SD card
-static PersistState saved;   // what is on the card now
 
 static PersistState currentState() {
   PersistState p = saved;

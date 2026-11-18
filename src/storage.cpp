@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <dirent.h>
 
 namespace storage {
 
@@ -189,6 +190,49 @@ bool appendText(const char* name, const char* text, size_t len) {
   if (!f) return false;
   bool good = fwrite(text, 1, len, f) == len;
   return fclose(f) == 0 && good;
+}
+
+static void listDir(const char* path, const char* prefix) {
+  DIR* d = opendir(path);
+  if (!d) return;
+  while (struct dirent* e = readdir(d)) {
+    char full[80];
+    snprintf(full, sizeof full, "%s/%s", path, e->d_name);
+    struct stat st;
+    if (stat(full, &st) != 0) continue;
+    if (S_ISDIR(st.st_mode)) {
+      char pre[40];
+      snprintf(pre, sizeof pre, "%s%s/", prefix, e->d_name);
+      listDir(full, pre);
+    } else {
+      Serial.printf("  %s%-16s %8lu\n", prefix, e->d_name, (unsigned long)st.st_size);
+    }
+  }
+  closedir(d);
+}
+
+void listFiles() {
+  if (!ok) { Serial.println("[sd] no card"); return; }
+  Serial.println("[sd] /incl:");
+  listDir(SDDIR, "");
+}
+
+void printFile(const char* name, size_t tail) {
+  if (!ok) { Serial.println("[sd] no card"); return; }
+  char path[64];
+  snprintf(path, sizeof path, SDDIR "/%s", name);
+  FILE* f = fopen(path, "r");
+  if (!f) { Serial.printf("[sd] no %s\n", path); return; }
+  fseek(f, 0, SEEK_END);
+  long size = ftell(f);
+  long from = size > (long)tail ? size - (long)tail : 0;
+  fseek(f, from, SEEK_SET);
+  Serial.printf("----- %s (%ld bytes, from %ld) -----\n", path, size, from);
+  char buf[256];
+  size_t n;
+  while ((n = fread(buf, 1, sizeof buf, f)) > 0) Serial.write((const uint8_t*)buf, n);
+  fclose(f);
+  Serial.println("\n----- end -----");
 }
 
 // ------------------------------------------------------------------ mount + config
