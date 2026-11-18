@@ -56,6 +56,29 @@ Open `ios/InclinoLink.xcodeproj` in Xcode, pick your team under *Signing & Capab
 
 Protocol (service/characteristic UUIDs, 10-byte packet) is documented in `src/ble.h`.
 
+## Remote IMU (`remote/`)
+
+The built-in IMU only measures the car correctly if the display itself is rigidly mounted. A second
+sensor — Seeed **XIAO ESP32-C6** + **MPU-6050/6500** (GY-521 style board) — can sit anywhere solid in
+the car (e.g. bolted to the floor/tunnel) and stream to the display over Bluetooth LE.
+
+Wiring: XIAO `3V3`→VCC, `GND`→GND, `D4` (GPIO22)→SDA, `D5` (GPIO23)→SCL.
+
+```sh
+cd remote && ~/.platformio/penv/bin/pio run -t upload
+```
+
+- Mount it with the board's **X arrow pointing forward** (or set `remote_forward` in `config.txt`,
+  e.g. `-y`), any tilt is fine. Power it up with the car standing still: it measures its gyro bias in the
+  first 2 s (and remembers it for power-ups while driving).
+- It finds the inclinometer on its own (LED: fast blink = searching, short flash every 3 s = connected).
+  The display switches to it after 1 s of data ("REMOTE SENSOR"), and back to the built-in IMU if
+  it drops out for 0.5 s ("REMOTE SENSOR LOST").
+- **Set level once with the remote connected** — it has its own level reference (`rlevel_*.txt`), so the
+  built-in one stays valid as the fallback.
+- Raw samples (250 Hz, sent 10 per packet) go through the same tilt filter as the built-in IMU.
+  Protocol: `shared/imu_link.h`. Serial `i` on the display prints link statistics.
+
 ## Settings and SD card
 
 `src/config.h` holds the defaults (and filter tuning). With a microSD card (FAT32) in the display,
@@ -64,8 +87,9 @@ computer and restart. The card also stores:
 
 | File | Content |
 |---|---|
-| `/incl/config.txt` | warning/danger angles, buzzer, backlight, drive log on/off + interval, OBD adapter name |
+| `/incl/config.txt` | warning/danger angles, buzzer, backlight, drive log on/off + interval, OBD adapter name, remote IMU |
 | `/incl/level_a.txt`, `level_b.txt` | level reference |
+| `/incl/rlevel_a.txt`, `rlevel_b.txt` | level reference of the remote IMU |
 | `/incl/state_a.txt`, `state_b.txt` | peak angles, max speed, trip, drive log counter |
 | `/incl/logs/NNNNN.csv` | drive log, one file per power-up: angles, speed + source, heading, OBD values |
 

@@ -47,7 +47,7 @@ struct Record {
   uint32_t seq = 0;
   int slot = 1;   // slot of the newest valid copy (the next write goes to the other)
 };
-static Record recLevel{"level"}, recState{"state"};
+static Record recLevel[2] = {{"level"}, {"rlevel"}}, recState{"state"};
 
 static void slotPath(char* out, size_t n, const Record& r, int slot) {
   snprintf(out, n, SDDIR "/%s_%c.txt", r.name, slot ? 'b' : 'a');
@@ -99,10 +99,10 @@ static bool saveRecord(Record& r, const char* body) {
 // ------------------------------------------------------------------ level / state
 struct LevelCtx { float* m; int got; };
 
-bool loadLevel(float m[9]) {
-  if (!ok) return false;
+bool loadLevel(int sensor, float m[9]) {
+  if (!ok || sensor < 0 || sensor > 1) return false;
   char buf[512];
-  if (!loadRecord(recLevel, buf, sizeof buf)) return false;
+  if (!loadRecord(recLevel[sensor], buf, sizeof buf)) return false;
   LevelCtx c{m, 0};
   settings::parseKv(buf, [](const char* k, const char* v, void* p) {
     auto* c = (LevelCtx*)p;
@@ -113,12 +113,12 @@ bool loadLevel(float m[9]) {
   return c.got == 9;
 }
 
-bool saveLevel(const float m[9]) {
-  if (!ok) return false;
+bool saveLevel(int sensor, const float m[9]) {
+  if (!ok || sensor < 0 || sensor > 1) return false;
   char body[200];
   snprintf(body, sizeof body, "mount=%.6f %.6f %.6f %.6f %.6f %.6f %.6f %.6f %.6f\n",
            m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
-  return saveRecord(recLevel, body);
+  return saveRecord(recLevel[sensor], body);
 }
 
 bool loadState(PersistState& s) {

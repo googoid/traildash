@@ -1,6 +1,7 @@
 # CLAUDE.md
 
-Car inclinometer firmware (ESP32-S3, PlatformIO), iOS GPS link app (`ios/`), enclosure CAD (`enclosure/`).
+Car inclinometer firmware (ESP32-S3, PlatformIO), remote IMU firmware (`remote/`, XIAO ESP32-C6, own
+PlatformIO project; protocol in `shared/imu_link.h`), iOS GPS link app (`ios/`), enclosure CAD (`enclosure/`).
 See README.md for build, usage and architecture.
 
 ## Git — always use it

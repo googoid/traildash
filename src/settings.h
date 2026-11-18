@@ -15,6 +15,8 @@ struct Settings {
   bool log = LOG_ENABLED;              // drive log CSV on the SD card
   float logIntervalS = LOG_INTERVAL_S;
   char obdName[24] = "";               // extra OBD adapter name to look for ("" = built-in list only)
+  bool remoteImu = REMOTE_IMU;         // use the remote IMU while it is connected
+  char remoteForward[3] = REMOTE_FORWARD;   // its axis that points forward: "+x" .. "-z"
 };
 extern Settings cfg;
 

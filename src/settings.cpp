@@ -49,6 +49,11 @@ static void applyOne(const char* k, const char* v, void* ctx) {
     size_t i = 0;
     for (; v[i] && i < sizeof cfg.obdName - 1; i++) cfg.obdName[i] = (char)tolower((unsigned char)v[i]);
     cfg.obdName[i] = 0;
+  } else if (!strcmp(k, "remote_imu")) cfg.remoteImu = f != 0;
+  else if (!strcmp(k, "remote_forward")) {
+    char sg = v[0] == '-' ? '-' : '+';
+    char ax = (char)tolower((unsigned char)(v[0] == '-' || v[0] == '+' ? v[1] : v[0]));
+    if (ax == 'x' || ax == 'y' || ax == 'z') { cfg.remoteForward[0] = sg; cfg.remoteForward[1] = ax; cfg.remoteForward[2] = 0; }
   } else if (unknown) unknown(k);
 }
 
@@ -82,9 +87,16 @@ size_t format(char* out, size_t size) {
       "log_interval = %g\n"
       "\n"
       "# OBD adapter: part of its Bluetooth name, if it isn't found automatically\n"
-      "obd_name = %s\n",
+      "obd_name = %s\n"
+      "\n"
+      "# Remote IMU (XIAO ESP32-C6 + MPU-6050): 1 = use it instead of the built-in one while connected\n"
+      "remote_imu = %d\n"
+      "# Axis of the remote IMU board that points forward in the car: +x -x +y -y +z -z\n"
+      "# (set level again after changing it)\n"
+      "remote_forward = %s\n",
       cfg.rollWarnDeg, cfg.rollDangerDeg, cfg.pitchWarnDeg, cfg.pitchDangerDeg, cfg.buzzer ? 1 : 0,
-      (unsigned)cfg.backlight, cfg.log ? 1 : 0, cfg.logIntervalS, cfg.obdName);
+      (unsigned)cfg.backlight, cfg.log ? 1 : 0, cfg.logIntervalS, cfg.obdName, cfg.remoteImu ? 1 : 0,
+      cfg.remoteForward);
   return n < 0 ? 0 : (size_t)n;
 }
 

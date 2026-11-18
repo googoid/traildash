@@ -1,7 +1,8 @@
 // microSD card (1-bit SDMMC: CLK GPIO2, CMD GPIO1, D0 GPIO42, D3 on EXIO4).
 //
 //  /incl/config.txt          settings, edited by hand (written with defaults if missing)
-//  /incl/level_a|b.txt       level reference (mount orientation)
+//  /incl/level_a|b.txt       level reference (mount orientation) of the built-in IMU
+//  /incl/rlevel_a|b.txt      ... of the remote IMU (remote/)
 //  /incl/state_a|b.txt       peaks, max speed, trip, log counter
 //  /incl/logs/NNNNN.csv      drive log, one file per power-up
 //  /incl/obd.txt             OBD adapter diagnostics (connection, protocol, supported PIDs)
@@ -25,8 +26,9 @@ namespace storage {
 bool begin();
 bool mounted();
 
-bool loadLevel(float m[9]);
-bool saveLevel(const float m[9]);
+// sensor: 0 = built-in IMU, 1 = remote IMU (tilt::Source)
+bool loadLevel(int sensor, float m[9]);
+bool saveLevel(int sensor, const float m[9]);
 bool loadState(PersistState& s);
 bool saveState(const PersistState& s);
 
