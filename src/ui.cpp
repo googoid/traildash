@@ -33,6 +33,8 @@ static uint16_t* bgSpeed = nullptr;
 static uint16_t* bgDualD = nullptr;     // same, with the red danger glow baked in
 static uint16_t* bgPlainD = nullptr;
 static uint16_t* bgSpeedD = nullptr;
+static uint16_t* bgEngine = nullptr;
+static uint16_t* bgEngineD = nullptr;
 
 // ------------------------------------------------------------------ helpers
 static inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
@@ -265,6 +267,40 @@ static void buildSpeed() {
   gfx.text(font_tiny, "TRIP  km", SP_CELL_R, SP_LABEL_Y, DIM, 0);
 }
 
+// engine screen layout: rev gauge from 0 (lower left) over the top to full scale (lower right)
+static constexpr float EN_A0 = -125, EN_A1 = 125;
+static constexpr float EN_R0 = 198, EN_R1 = 214;           // gauge band (inside the page dots)
+static constexpr float EN_STATUS_Y = 118, EN_RPM_Y = 202, EN_RPM_UNIT_Y = 228;
+static constexpr float EN_COL_L = 172, EN_COL_R = 308;
+static constexpr float EN_ROW1 = 270, EN_ROW2 = 344;        // label baselines (value 44 px lower)
+static constexpr float EN_FOOT_Y = 424;
+static float rpmDeg(float rpm) { return EN_A0 + (EN_A1 - EN_A0) * clampf(rpm / ENGINE_GAUGE_RPM, 0, 1); }
+
+static void buildEngine() {
+  gfx.setTarget(bgEngine);
+  drawBgBase();
+  gfx.arc(CX, CY, EN_R0, EN_R1, EN_A0, EN_A1, Paint(0x17212C));
+  gfx.arc(CX, CY, EN_R1 - 4, EN_R1, rpmDeg(cfg.redlineRpm), EN_A1, Paint(RED, 0.8f));
+  for (int r = 0; r <= ENGINE_GAUGE_RPM; r += 250) {
+    bool major = r % 1000 == 0, mid = r % 500 == 0;
+    if (!mid) { radialLine(186, 192, rpmDeg(r), 1.2f, Paint(TICK2)); continue; }
+    uint32_t c = r >= cfg.redlineRpm ? RED : (major ? TICK : TICK2);
+    radialLine(major ? 174 : 182, 192, rpmDeg(r), major ? 2.6f : 1.6f, Paint(c));
+    if (major) {
+      float x, y; polar(158, rpmDeg(r), x, y);
+      char b[4]; snprintf(b, sizeof b, "%d", r / 1000);
+      gfx.text(font_small, b, x, y + 6, r >= cfg.redlineRpm ? RED : DIM, 0);
+    }
+  }
+  gfx.text(font_tiny, "rpm", CX, EN_RPM_UNIT_Y, DIM, 0);
+  gfx.line(120, 246, 360, 246, 1.2f, Paint(FAINT));
+  gfx.line(CX, 258, CX, 398, 1.2f, Paint(FAINT));
+  gfx.line(150, 326, 330, 326, 1.2f, Paint(FAINT));
+  gfx.text(font_tiny, "COOLANT  °C", EN_COL_L, EN_ROW1, DIM, 0);
+  gfx.text(font_tiny, "BATTERY  V", EN_COL_R, EN_ROW1, DIM, 0);
+  gfx.text(font_tiny, "AVG  L/100 km", EN_COL_R, EN_ROW2, DIM, 0);
+}
+
 bool begin(void* (*alloc)(size_t), void (*flush)(void*, size_t)) {
   bgDual = (uint16_t*)alloc(FB_BYTES);
   bgPlain = (uint16_t*)alloc(FB_BYTES);
@@ -272,18 +308,21 @@ bool begin(void* (*alloc)(size_t), void (*flush)(void*, size_t)) {
   bgPlainD = (uint16_t*)alloc(FB_BYTES);
   bgSpeed = (uint16_t*)alloc(FB_BYTES);
   bgSpeedD = (uint16_t*)alloc(FB_BYTES);
-  if (!bgDual || !bgPlain || !bgDualD || !bgPlainD || !bgSpeed || !bgSpeedD) return false;
+  bgEngine = (uint16_t*)alloc(FB_BYTES);
+  bgEngineD = (uint16_t*)alloc(FB_BYTES);
+  if (!bgDual || !bgPlain || !bgDualD || !bgPlainD || !bgSpeed || !bgSpeedD || !bgEngine || !bgEngineD) return false;
   buildDual();
   buildPlain();
   buildSpeed();
-  uint16_t* src[3] = {bgDual, bgPlain, bgSpeed};
-  uint16_t* dst[3] = {bgDualD, bgPlainD, bgSpeedD};
-  for (int i = 0; i < 3; i++) {
+  buildEngine();
+  uint16_t* src[4] = {bgDual, bgPlain, bgSpeed, bgEngine};
+  uint16_t* dst[4] = {bgDualD, bgPlainD, bgSpeedD, bgEngineD};
+  for (int i = 0; i < 4; i++) {
     memcpy(dst[i], src[i], FB_BYTES);
     gfx.setTarget(dst[i]);
     gfx.glowRing(CX, CY, 239, 30, RED, 0.75f);
   }
-  if (flush) for (uint16_t* b : {bgDual, bgPlain, bgSpeed, bgDualD, bgPlainD, bgSpeedD}) flush(b, FB_BYTES);
+  if (flush) for (uint16_t* b : {bgDual, bgPlain, bgSpeed, bgEngine, bgDualD, bgPlainD, bgSpeedD, bgEngineD}) flush(b, FB_BYTES);
   return true;
 }
 
@@ -476,6 +515,129 @@ static void renderSpeed(const UiState& s) {
   gfx.text(font_med, b, SP_CELL_R, SP_VALUE_Y, s.tripKm > 0.05f ? TXT : DIM, 0);
 }
 
+// Rev gauge, rpm, coolant, battery, fuel use.
+static bool has(float v) { return v > -900; }
+
+static void engineCell(float cx, float labelY, const char* label, const char* value, uint32_t c) {
+  if (label) gfx.text(font_tiny, label, cx, labelY, DIM, 0);
+  gfx.text(font_big, value, cx, labelY + 44, c, 0);
+}
+
+static void renderEngine(const UiState& s) {
+  const bool live = s.obdState == 4;
+  char b[24];
+
+  // ---- status ----
+  static const char* const note[5] = {"FINDING ADAPTER", "OBD CONNECTING", "OBD STARTING", "IGNITION OFF?", "OBD"};
+  const char* st = note[s.obdState < 5 ? s.obdState : 0];
+  uint32_t sc = live ? GREEN : AMBER;
+  float tw = gfx.textWidth(font_tiny, st);
+  gfx.circle(CX - tw / 2 - 9, EN_STATUS_Y - 5, 3.5f, Paint(sc));
+  gfx.text(font_tiny, st, CX + 5, EN_STATUS_Y, live ? DIM : sc, 0);
+
+  // ---- rev gauge + number ----
+  if (has(s.rpm)) {
+    const float red = cfg.redlineRpm;
+    uint32_t c = s.rpm >= red ? RED : s.rpm >= red - 500 ? AMBER : ACCENT;
+    float d = rpmDeg(s.rpm);
+    if (s.rpm > 20) gfx.arc(CX, CY, EN_R0, EN_R1, EN_A0, d, Paint(c));
+    radialLine(EN_R0 - 6, EN_R1 + 4, d, 3.f, Paint(TXT));
+    snprintf(b, sizeof b, "%d", (int)(lroundf(s.rpm / 10.f) * 10));
+    gfx.text(font_huge, b, CX, EN_RPM_Y, s.rpm >= red - 500 ? c : TXT, 0);
+  } else {
+    gfx.text(font_huge, "--", CX, EN_RPM_Y, FAINT, 0);
+  }
+
+  // ---- coolant ----
+  if (has(s.coolantC)) {
+    uint32_t c = s.coolantC >= COOLANT_DANGER_C ? RED : s.coolantC >= COOLANT_HOT_C ? AMBER
+               : s.coolantC < COOLANT_COLD_C ? ACCENT : TXT;
+    snprintf(b, sizeof b, "%d", (int)lroundf(s.coolantC));
+    engineCell(EN_COL_L, EN_ROW1, nullptr, b, c);
+  } else engineCell(EN_COL_L, EN_ROW1, nullptr, "--", FAINT);
+
+  // ---- battery: not charging (engine running) or flat ----
+  if (has(s.volts)) {
+    bool running = has(s.rpm) && s.rpm > 400;
+    // adapter voltage (ATRV) reads ~0.3 V under the battery: 12.8-13.0 at idle is normal charging
+    uint32_t c = s.volts < 11.0f || s.volts > 15.2f ? RED
+               : running && s.volts < 12.5f ? AMBER : !running && s.volts < 11.6f ? AMBER : TXT;
+    snprintf(b, sizeof b, "%.1f", s.volts);
+    engineCell(EN_COL_R, EN_ROW1, nullptr, b, c);
+  } else engineCell(EN_COL_R, EN_ROW1, nullptr, "--", FAINT);
+
+  // ---- fuel: L/100 km while moving, L/h standing ----
+  if (has(s.fuelL100)) {
+    snprintf(b, sizeof b, s.fuelL100 < 100 ? "%.1f" : "%.0f", s.fuelL100);
+    engineCell(EN_COL_L, EN_ROW2, "NOW  L/100 km", b, TXT);
+  } else if (has(s.fuelLph)) {
+    snprintf(b, sizeof b, "%.1f", s.fuelLph);
+    engineCell(EN_COL_L, EN_ROW2, "NOW  L/h", b, TXT);
+  } else engineCell(EN_COL_L, EN_ROW2, "NOW  L/100 km", "--", FAINT);
+  if (has(s.avgL100)) {
+    snprintf(b, sizeof b, "%.1f", s.avgL100);
+    engineCell(EN_COL_R, EN_ROW2, nullptr, b, TXT);
+  } else engineCell(EN_COL_R, EN_ROW2, nullptr, "--", FAINT);
+
+  // ---- intake + load ----
+  if (has(s.intakeC) || has(s.loadPct)) {
+    char i[12] = "--", l[12] = "--";
+    if (has(s.intakeC)) snprintf(i, sizeof i, "%d°C", (int)lroundf(s.intakeC));
+    if (has(s.loadPct)) snprintf(l, sizeof l, "%d%%", (int)lroundf(s.loadPct));
+    snprintf(b, sizeof b, "INTAKE %s   LOAD %s", i, l);
+    gfx.text(font_tiny, b, CX, EN_FOOT_Y, DIM, 0);
+  }
+}
+
+// Car (OBD) speed next to GPS speed: shows the speedometer / tyre-size error.
+static void renderCompare(const UiState& s) {
+  char b[40];
+  gfx.text(font_small, "SPEED CHECK", CX, 92, ACCENT, 0);
+  gfx.line(170, 104, 310, 104, 1.2f, Paint(ACCENT, 0.35f));
+  gfx.line(CX, 130, CX, 272, 1.2f, Paint(FAINT));
+  gfx.line(110, 292, 370, 292, 1.2f, Paint(FAINT));
+
+  const float col[2] = {162, 318};
+  const char* label[2] = {"CAR  (OBD)", "GPS  (PHONE)"};
+  const float v[2] = {s.obdKmh, s.gpsKmh};
+  for (int i = 0; i < 2; i++) {
+    gfx.text(font_tiny, label[i], col[i], 150, DIM, 0);
+    if (v[i] >= 0) {
+      snprintf(b, sizeof b, "%d", (int)lroundf(v[i]));
+      gfx.text(font_huge, b, col[i], 248, TXT, 0);
+    } else {
+      gfx.text(font_huge, "--", col[i], 248, FAINT, 0);
+    }
+    gfx.text(font_tiny, "km/h", col[i], 272, DIM, 0);
+  }
+
+  // now
+  gfx.text(font_tiny, "CAR MINUS GPS NOW", CX, 318, DIM, 0);
+  if (s.obdKmh >= 0 && s.gpsKmh >= 0) {
+    float d = s.obdKmh - s.gpsKmh;
+    if (s.gpsKmh >= 5) snprintf(b, sizeof b, "%+.0f km/h    %+.1f%%", d, d / s.gpsKmh * 100.f);
+    else snprintf(b, sizeof b, "%+.0f km/h", d);
+    gfx.text(font_med, b, CX, 350, TXT, 0);
+  } else {
+    gfx.text(font_med, "- -", CX, 350, FAINT, 0);
+  }
+
+  // average over the distance compared
+  if (s.cmpPct > -900) {
+    snprintf(b, sizeof b, "AVERAGE OVER %.1f km", s.cmpKm);
+    gfx.text(font_tiny, b, CX, 384, DIM, 0);
+    float p = s.cmpPct;
+    if (fabsf(p) < 0.5f) snprintf(b, sizeof b, "CAR READS RIGHT");
+    else snprintf(b, sizeof b, "CAR READS %.1f%% %s", fabsf(p), p > 0 ? "HIGH" : "LOW");
+    gfx.text(font_med, b, CX, 416, fabsf(p) < 2.f ? GREEN : AMBER, 0);
+    gfx.text(font_tiny, "HOLD 2 s TO RESET", CX, 444, 0x4E5D6B, 0);
+  } else {
+    gfx.text(font_tiny, "AVERAGE", CX, 384, DIM, 0);
+    snprintf(b, sizeof b, "needs both above %d km/h", (int)CMP_MIN_KMH);
+    gfx.text(font_tiny, b, CX, 410, 0x4E5D6B, 0);
+  }
+}
+
 // Display diagnostics: single-pixel lines, per-channel ramps, AA shapes.
 static void renderTestPattern() {
   gfx.rect(0, 0, 480, 480, Paint(0x000000));
@@ -523,9 +685,10 @@ static void overlays(const UiState& s) {
       gfx.text(font_tiny, "keep the car still", CX, 264, DIM, 0);
     } else {
       gfx.arc(CX, CY, 130, 136, 0, 360.f * clampf(s.holdProgress, 0, 1), Paint(ACCENT));
-      bool trip = s.screen == SCREEN_SPEED;
-      gfx.text(font_med, trip ? "RESET TRIP" : "SET LEVEL", CX, 236, TXT, 0);
-      gfx.text(font_tiny, trip ? "clears max speed & distance" : "park on flat ground & keep holding", CX, 262, DIM, 0);
+      bool trip = s.screen == SCREEN_SPEED || s.screen == SCREEN_ENGINE, cmp = s.screen == SCREEN_COMPARE;
+      gfx.text(font_med, trip ? "RESET TRIP" : cmp ? "RESET AVERAGE" : "SET LEVEL", CX, 236, TXT, 0);
+      gfx.text(font_tiny, trip ? "clears max, trip & avg fuel" : cmp ? "starts the comparison over"
+                        : "park level & keep holding", CX, 262, DIM, 0);
     }
   }
 
@@ -556,8 +719,10 @@ const uint16_t* background(const UiState& s) {
   const bool d = inDanger(s);
   switch (s.screen) {
     case SCREEN_DUAL:   return d ? bgDualD : bgDual;
-    case SCREEN_PEAKS:  return d ? bgPlainD : bgPlain;
+    case SCREEN_PEAKS:
+    case SCREEN_COMPARE: return d ? bgPlainD : bgPlain;
     case SCREEN_SPEED:  return d ? bgSpeedD : bgSpeed;
+    case SCREEN_ENGINE: return d ? bgEngineD : bgEngine;
     default:            return nullptr;   // drawn procedurally
   }
 }
@@ -574,6 +739,8 @@ void prepare(const UiState& s) {
       case SCREEN_DUAL:    renderDual(s); break;
       case SCREEN_PEAKS:   renderPeaks(s); break;
       case SCREEN_SPEED:   renderSpeed(s); break;
+      case SCREEN_ENGINE:  renderEngine(s); break;
+      case SCREEN_COMPARE: renderCompare(s); break;
       default: break;
     }
     overlays(s);

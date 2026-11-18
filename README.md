@@ -27,9 +27,10 @@ The project is under git (branch `main`). Work like this:
 
 | Action | Effect |
 |---|---|
-| Tap | Next screen: dual gauge → speed → peaks |
+| Tap | Next screen: speed → engine → inclinometer → peaks → speed check. The screen shown is remembered across power-ups (SD card). |
 | Hold 2 s | **Set level** — park on flat ground first. The screen blinks off briefly while it is saved. |
-| Hold 2 s on the speed screen | Reset max speed and trip distance |
+| Hold 2 s on the speed or engine screen | Reset max speed, trip distance and average fuel use |
+| Hold 2 s on the speed check screen | Restart the car-vs-GPS average |
 | Double-tap | Reset peak angles |
 | BOOT button | Short = next screen, long = same as hold |
 
@@ -48,6 +49,14 @@ Open `ios/InclinoLink.xcodeproj` in Xcode, pick your team under *Signing & Capab
   they reset at power-up). Distance is speed × time, so it isn't counted while there is no speed source.
 - With an OBD-II BLE adapter (ELM327, e.g. Vgate iOS-Vlink) in the car, speed comes from the car
   instead (status shows **OBD**); see `src/obd.cpp`.
+- The **engine screen** (OBD only) shows a rev gauge (red zone: `redline` in config.txt), coolant
+  (blue = cold, amber from 105 °C, red from 110 °C), adapter voltage, fuel use now (L/100 km, or L/h
+  when standing) and the average since the trip reset, plus intake temperature and engine load.
+  Fuel use is calculated from the mass airflow sensor (air ÷ 14.7): right at cruise, low under full
+  throttle. The adapter reads ~0.3 V below the battery, so 12.8–13.0 V at idle is normal.
+- The **speed check** screen shows the car's (OBD) and the phone's GPS speed side by side, the
+  difference now, and the average difference over the distance driven with both above 20 km/h
+  (GPS lags about a second, which averages out). That is the speedometer / tyre-size error.
 - GPS runs only while the inclinometer is connected. Set Location to **Always** so GPS can start
   when the device connects while the phone is locked.
 - iOS doesn't reopen a swiped-away app for Bluetooth. The in-app option *Restart after swipe-away*
@@ -85,15 +94,18 @@ computer and restart. The card also stores:
 
 | File | Content |
 |---|---|
-| `/incl/config.txt` | warning/danger angles, buzzer, backlight, drive log on/off + interval, OBD adapter name, remote IMU forward axis |
+| `/incl/config.txt` | warning/danger angles, buzzer, backlight, drive log on/off + interval, OBD adapter name, remote IMU forward axis, rev gauge red zone |
 | `/incl/rlevel_a.txt`, `rlevel_b.txt` | level reference (of the remote IMU) |
-| `/incl/state_a.txt`, `state_b.txt` | peak angles, max speed, trip, drive log counter |
+| `/incl/state_a.txt`, `state_b.txt` | peak angles, max speed, trip, fuel used for the average, drive log counter |
 | `/incl/logs/NNNNN.csv` | drive log, one file per power-up: angles, speed + source, heading, OBD values |
 
 Records are written alternately to the `_a`/`_b` file with a sequence number and checksum, so a power
 cut during a write keeps the previous version. The drive log reaches the card every 10 s.
 Without a card the level reference falls back to internal flash (screen blinks while saving) and
 nothing else is kept. A level reference already in flash is copied to a new card automatically.
+
+Without a card reader, over USB serial: `s` lists the files, `o` prints the end of `obd.txt`,
+`c21` prints drive log 21, `v` prints the current screen, trip, fuel and comparison totals.
 
 ## How it works
 

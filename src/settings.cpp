@@ -53,7 +53,8 @@ static void applyOne(const char* k, const char* v, void* ctx) {
     char sg = v[0] == '-' ? '-' : '+';
     char ax = (char)tolower((unsigned char)(v[0] == '-' || v[0] == '+' ? v[1] : v[0]));
     if (ax == 'x' || ax == 'y' || ax == 'z') { cfg.remoteForward[0] = sg; cfg.remoteForward[1] = ax; cfg.remoteForward[2] = 0; }
-  } else if (unknown) unknown(k);
+  } else if (!strcmp(k, "redline")) cfg.redlineRpm = clampf(f, 2000, ENGINE_GAUGE_RPM);
+  else if (unknown) unknown(k);
 }
 
 void apply(const char* text, void (*unknown)(const char*)) {
@@ -90,9 +91,13 @@ size_t format(char* out, size_t size) {
       "\n"
       "# Axis of the remote IMU board that points forward in the car: +x -x +y -y +z -z\n"
       "# (set level again after changing it)\n"
-      "remote_forward = %s\n",
+      "remote_forward = %s\n"
+      "\n"
+      "# Engine screen: rev gauge red zone from here, rpm\n"
+      "redline = %g\n",
       cfg.rollWarnDeg, cfg.rollDangerDeg, cfg.pitchWarnDeg, cfg.pitchDangerDeg, cfg.buzzer ? 1 : 0,
-      (unsigned)cfg.backlight, cfg.log ? 1 : 0, cfg.logIntervalS, cfg.obdName, cfg.remoteForward);
+      (unsigned)cfg.backlight, cfg.log ? 1 : 0, cfg.logIntervalS, cfg.obdName, cfg.remoteForward,
+      cfg.redlineRpm);
   return n < 0 ? 0 : (size_t)n;
 }
 

@@ -16,7 +16,9 @@
 struct PersistState {
   float peakRollL = 0, peakRollR = 0, peakPitchUp = 0, peakPitchDn = 0;
   float maxKmh = 0, tripKm = 0;
+  float fuelL = 0, fuelKm = 0;   // fuel used and distance driven while it was measured (OBD), since trip reset
   uint32_t logNo = 0;   // number of the last drive log file
+  uint8_t screen = 0;   // shown screen, restored at power-up
 };
 
 namespace storage {

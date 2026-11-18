@@ -137,7 +137,10 @@ bool loadState(PersistState& s) {
     else if (!strcmp(k, "peak_pitch_dn")) s->peakPitchDn = f;
     else if (!strcmp(k, "max_kmh")) s->maxKmh = f;
     else if (!strcmp(k, "trip_km")) s->tripKm = f;
+    else if (!strcmp(k, "fuel_l")) s->fuelL = f;
+    else if (!strcmp(k, "fuel_km")) s->fuelKm = f;
     else if (!strcmp(k, "log_no")) s->logNo = strtoul(v, nullptr, 10);
+    else if (!strcmp(k, "screen")) s->screen = (uint8_t)atoi(v);
   }, &s);
   return true;
 }
@@ -147,8 +150,9 @@ bool saveState(const PersistState& s) {
   char body[300];
   snprintf(body, sizeof body,
            "peak_roll_l=%.2f\npeak_roll_r=%.2f\npeak_pitch_up=%.2f\npeak_pitch_dn=%.2f\n"
-           "max_kmh=%.1f\ntrip_km=%.3f\nlog_no=%lu\n",
-           s.peakRollL, s.peakRollR, s.peakPitchUp, s.peakPitchDn, s.maxKmh, s.tripKm, (unsigned long)s.logNo);
+           "max_kmh=%.1f\ntrip_km=%.3f\nfuel_l=%.3f\nfuel_km=%.3f\nlog_no=%lu\nscreen=%u\n",
+           s.peakRollL, s.peakRollR, s.peakPitchUp, s.peakPitchDn, s.maxKmh, s.tripKm, s.fuelL, s.fuelKm,
+           (unsigned long)s.logNo, (unsigned)s.screen);
   return saveRecord(recState, body);
 }
 

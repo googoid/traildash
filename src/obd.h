@@ -26,6 +26,7 @@ struct Data {
   float loadPct = 0;    uint32_t loadMs = 0;
   float throttlePct = 0; uint32_t throttleMs = 0;
   float volts = 0;      uint32_t voltsMs = 0;
+  float mafGs = 0;      uint32_t mafMs = 0;    // mass airflow, g/s (-> fuel use)
   uint8_t protocol = 0; // ELM327 protocol number (ATDPN): 6..9 = CAN, 3..5 = K-line
 };
 

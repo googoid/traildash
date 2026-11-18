@@ -55,7 +55,31 @@ int main(int argc, char** argv) {
     {"speed_obd",    mk(SCREEN_SPEED, 2.f, 1.f)},
     {"speed_obd_wait", mk(SCREEN_SPEED, 2.f, 1.f)},
     {"dual_nosensor", mk(SCREEN_DUAL, 0.f, 0.f)},
+    {"engine",        mk(SCREEN_ENGINE, 0.f, 0.f)},
+    {"engine_idle",   mk(SCREEN_ENGINE, 0.f, 0.f)},
+    {"engine_hot",    mk(SCREEN_ENGINE, 0.f, 0.f)},
+    {"engine_off",    mk(SCREEN_ENGINE, 0.f, 0.f)},
+    {"compare",       mk(SCREEN_COMPARE, 0.f, 0.f)},
+    {"compare_start", mk(SCREEN_COMPARE, 0.f, 0.f)},
   };
+  shots[16].s.obdKmh = 103; shots[16].s.gpsKmh = 98.6f; shots[16].s.cmpKm = 37.2f; shots[16].s.cmpPct = 4.3f;
+  shots[17].s.obdKmh = 12; shots[17].s.gpsKmh = -1;
+  {   // cruising, warm
+    UiState& e = shots[12].s;
+    e.obdState = 4; e.rpm = 2140; e.coolantC = 88; e.volts = 14.1f; e.intakeC = 31; e.loadPct = 42;
+    e.fuelLph = 11.8f; e.fuelL100 = 13.4f; e.avgL100 = 15.2f;
+  }
+  {   // cold idle, standing: L/h
+    UiState& e = shots[13].s;
+    e.obdState = 4; e.rpm = 780; e.coolantC = 44; e.volts = 12.9f; e.intakeC = 30; e.loadPct = 28;
+    e.fuelLph = 1.6f;
+  }
+  {   // near redline, overheating, not charging
+    UiState& e = shots[14].s;
+    e.obdState = 4; e.rpm = 4870; e.coolantC = 108; e.volts = 12.4f; e.intakeC = 45; e.loadPct = 91;
+    e.fuelLph = 38.f; e.fuelL100 = 41.5f; e.avgL100 = 16.0f;
+  }
+  shots[15].s.obdState = 3;
   shots[11].s.sensorOk = false;
   shots[4].s.holdProgress = 0.62f;
   shots[5].s.toast = "LEVEL SET"; shots[5].s.toastAge = 1.0f;

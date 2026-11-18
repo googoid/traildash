@@ -468,6 +468,7 @@ int Canvas::text(const Font& f, const char* s, float fx, float fy, uint32_t colo
   it.y0 = fy - f.ascent - 4; it.y1 = fy + f.descent + 4;
   it.font = &f;
   strncpy(it.str, s, sizeof(it.str) - 1); it.str[sizeof(it.str) - 1] = 0;
+  if (strlen(s) >= sizeof(it.str)) printf("[gfx] text cut to %u chars: \"%s\"\n", (unsigned)sizeof(it.str) - 1, s);
   it.tx = fx; it.ty = fy; it.color = color; it.align = (int8_t)align; it.alpha = alpha;
   return w;
 }

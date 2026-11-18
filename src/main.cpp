@@ -30,7 +30,7 @@
 struct Shared {
   volatile float pitch = 0, roll = 0, adapt = 0;
   volatile float peakRollL = 0, peakRollR = 0, peakPitchUp = 0, peakPitchDn = 0;
-  volatile uint8_t screen = SCREEN_DUAL;
+  volatile uint8_t screen = SCREEN_SPEED;
   volatile float holdProgress = 0;
   volatile bool leveling = false;
   volatile bool levelSet = false;
@@ -48,6 +48,14 @@ struct Shared {
   volatile float courseDeg = -1;  // <0 = unknown
   volatile float maxKmh = 0;
   volatile float tripKm = 0;
+  // engine (OBD); < -900 = not available
+  volatile uint8_t obdState = 0;
+  volatile float rpm = -999, coolantC = -999, volts = -999, intakeC = -999, loadPct = -999;
+  volatile float fuelLph = -999, fuelL100 = -999;
+  volatile float fuelL = 0, fuelKm = 0;   // since trip reset (average consumption)
+  // speed comparison: both sources separately, distances while both were live and moving
+  volatile float obdKmh = -1, gpsKmh = -1;
+  volatile float cmpObdKm = 0, cmpGpsKm = 0;
 };
 static Shared sh;
 
@@ -60,7 +68,7 @@ static void resetPeaks() {
   sh.peakRollL = 0; sh.peakRollR = 0; sh.peakPitchUp = 0; sh.peakPitchDn = 0;
 }
 
-static void resetTrip() { sh.maxKmh = 0; sh.tripKm = 0; }
+static void resetTrip() { sh.maxKmh = 0; sh.tripKm = 0; sh.fuelL = 0; sh.fuelKm = 0; }
 
 static void nextScreen() { sh.screen = (sh.screen + 1) % SCREEN_COUNT; }
 
@@ -87,7 +95,8 @@ struct PressTracker {
         progress = (float)(held - 350) / (LONG_PRESS_MS - 350);
         if (progress >= 1.f) {
           longFired = true; pendingTapAt = 0; progress = 0;
-          if (sh.screen == SCREEN_SPEED) { resetTrip(); showToast("TRIP RESET"); }
+          if (sh.screen == SCREEN_SPEED || sh.screen == SCREEN_ENGINE) { resetTrip(); showToast("TRIP RESET"); }
+          else if (sh.screen == SCREEN_COMPARE) { sh.cmpObdKm = 0; sh.cmpGpsKm = 0; showToast("AVERAGE RESET"); }
           else startLevel();
         }
       }
@@ -219,6 +228,44 @@ static void sensorTask(void*) {
       } else {
         sh.speedKmh = -1;
       }
+      // speed comparison (car vs GPS)
+      {
+        bool gpsOk = blelink::connected() && fresh && f.speedValid;
+        sh.obdKmh = obdSpeed ? od.speedKmh : -1;
+        sh.gpsKmh = gpsOk ? (f.speedMs * 3.6f < TRIP_MIN_KMH ? 0 : f.speedMs * 3.6f) : -1;
+        bool accurate = f.speedAccMs >= 0 && f.speedAccMs * 3.6f < MAX_SPEED_ACC_KMH;
+        if (obdSpeed && gpsOk && accurate && od.speedKmh >= CMP_MIN_KMH) {
+          // distances, not instant ratios: GPS lags ~1 s, which averages out over a drive
+          sh.cmpObdKm += od.speedKmh * navDt / 3600.f;
+          sh.cmpGpsKm += f.speedMs * 3.6f * navDt / 3600.f;
+        }
+      }
+
+      // engine screen: OBD values, fuel use from the mass airflow
+      {
+        const bool live = od.state == obd::OBD_LIVE;
+        auto val = [&](float v, uint32_t ms, uint32_t maxAge) { return live && obd::fresh(ms, maxAge) ? v : -999.f; };
+        sh.obdState = od.state;
+        sh.rpm = val(od.rpm, od.rpmMs, 3000);
+        sh.coolantC = val(od.coolantC, od.coolantMs, 10000);
+        sh.intakeC = val(od.intakeC, od.intakeMs, 10000);
+        sh.loadPct = val(od.loadPct, od.loadMs, 10000);
+        sh.volts = val(od.volts, od.voltsMs, 20000);
+        static float lph = -1;   // smoothed fuel flow
+        if (live && obd::fresh(od.mafMs, 3000)) {
+          float x = od.rpm > 0 ? od.mafGs * 3600.f / (FUEL_AFR * FUEL_G_PER_L) : 0;
+          lph = lph < 0 ? x : lph + (x - lph) * fminf(1.f, navDt / FUEL_SMOOTH_S);
+          sh.fuelL += x * navDt / 3600.f;
+          if (obdSpeed) sh.fuelKm += od.speedKmh * navDt / 3600.f;
+        } else {
+          lph = -1;
+        }
+        sh.fuelLph = lph >= 0 ? lph : -999;
+        static float kmhS = 0;   // smoothed like the fuel flow, so the ratio is steady
+        kmhS = obdSpeed ? kmhS + (od.speedKmh - kmhS) * fminf(1.f, navDt / FUEL_SMOOTH_S) : 0;
+        sh.fuelL100 = lph >= 0 && obdSpeed && kmhS >= 5 ? lph / kmhS * 100.f : -999;
+      }
+
       if (fresh && f.courseValid) sh.courseDeg = f.courseDeg;
       else if (!fresh) sh.courseDeg = -1;   // keep last heading while stopped, drop it when data stops
       lastNavSeq = f.seq;
@@ -261,6 +308,9 @@ static void sensorTask(void*) {
                       (unsigned long)rs.packets, (unsigned long)rs.samples, (unsigned long)rs.lost,
                       (unsigned long)rs.overflow);
       }
+      else if (c == 'v')
+        Serial.printf("[state] screen %u, trip %.2f km, max %.0f km/h, fuel %.2f L over %.2f km, compared %.2f km\n",
+                      sh.screen, sh.tripKm, sh.maxKmh, sh.fuelL, sh.fuelKm, sh.cmpGpsKm);
       else if (c == 's') storage::listFiles();
       else if (c == 'o') storage::printFile("obd.txt", 32 * 1024);
       else if (c == 'g') {   // newest drive log (the current one is still being written)
@@ -348,6 +398,14 @@ static void renderTask(void*) {
     st.speedKmh = sh.speedKmh;
     st.maxKmh = sh.maxKmh;
     st.tripKm = sh.tripKm;
+    st.obdState = sh.obdState;
+    st.rpm = sh.rpm; st.coolantC = sh.coolantC; st.volts = sh.volts;
+    st.intakeC = sh.intakeC; st.loadPct = sh.loadPct;
+    st.fuelLph = sh.fuelLph; st.fuelL100 = sh.fuelL100;
+    st.avgL100 = sh.fuelKm >= 1.f ? sh.fuelL / sh.fuelKm * 100.f : -999;
+    st.obdKmh = sh.obdKmh; st.gpsKmh = sh.gpsKmh;
+    st.cmpKm = sh.cmpGpsKm;
+    st.cmpPct = sh.cmpGpsKm >= 0.5f ? (sh.cmpObdKm / sh.cmpGpsKm - 1.f) * 100.f : -999;
     // heading: ease along the shortest way round, so the compass ring turns smoothly
     if (sh.courseDeg < 0) st.courseDeg = -1;
     else if (st.courseDeg < 0) st.courseDeg = sh.courseDeg;
@@ -389,6 +447,8 @@ static PersistState currentState() {
   p.peakRollL = sh.peakRollL; p.peakRollR = sh.peakRollR;
   p.peakPitchUp = sh.peakPitchUp; p.peakPitchDn = sh.peakPitchDn;
   p.maxKmh = sh.maxKmh; p.tripKm = sh.tripKm;
+  p.fuelL = sh.fuelL; p.fuelKm = sh.fuelKm;
+  p.screen = sh.screen;
   return p;
 }
 
@@ -406,7 +466,9 @@ static void loadFromSd() {
     sh.peakRollL = saved.peakRollL; sh.peakRollR = saved.peakRollR;
     sh.peakPitchUp = saved.peakPitchUp; sh.peakPitchDn = saved.peakPitchDn;
     sh.maxKmh = saved.maxKmh; sh.tripKm = saved.tripKm;
-    Serial.printf("[sd] state loaded: trip %.1f km, max %.0f km/h\n", saved.tripKm, saved.maxKmh);
+    if (saved.screen < SCREEN_COUNT) sh.screen = saved.screen;
+    sh.fuelL = saved.fuelL; sh.fuelKm = saved.fuelKm;
+    Serial.printf("[sd] state loaded: trip %.1f km, max %.0f km/h, screen %u\n", saved.tripKm, saved.maxKmh, saved.screen);
   }
   if (cfg.log) {
     saved.logNo++;
@@ -423,7 +485,7 @@ static void fmtOpt(char* b, size_t n, bool ok, const char* fmt, float v) {
 static void storageTask(void*) {
   if (cfg.log)
     storage::logOpen(saved.logNo,
-                     "t_s,pitch,roll,speed_kmh,speed_src,course,rpm,coolant_c,intake_c,load_pct,throttle_pct,obd_volts\n");
+                     "t_s,pitch,roll,speed_kmh,speed_src,course,rpm,coolant_c,intake_c,load_pct,throttle_pct,obd_volts,maf_gs,fuel_lph\n");
   {
     char b[48];
     int n = snprintf(b, sizeof b, "\n=== power-up, drive log %05lu ===\n", (unsigned long)saved.logNo);
@@ -443,10 +505,11 @@ static void storageTask(void*) {
     }
 
     PersistState cur = currentState();
-    bool peaks = cur.peakRollL != saved.peakRollL || cur.peakRollR != saved.peakRollR ||
-                 cur.peakPitchUp != saved.peakPitchUp || cur.peakPitchDn != saved.peakPitchDn;
-    bool trip = cur.maxKmh != saved.maxKmh || cur.tripKm != saved.tripKm;
-    if ((peaks && now - lastSave >= 2000) || (trip && now - lastSave >= STATE_SAVE_S * 1000)) {
+    bool quick = cur.peakRollL != saved.peakRollL || cur.peakRollR != saved.peakRollR ||
+                 cur.peakPitchUp != saved.peakPitchUp || cur.peakPitchDn != saved.peakPitchDn ||
+                 cur.screen != saved.screen;   // saved within 2 s
+    bool trip = cur.maxKmh != saved.maxKmh || cur.tripKm != saved.tripKm || cur.fuelL != saved.fuelL;
+    if ((quick && now - lastSave >= 2000) || (trip && now - lastSave >= STATE_SAVE_S * 1000)) {
       if (storage::saveState(cur)) saved = cur;
       else Serial.println("[sd] state save FAILED");
       lastSave = now;
@@ -456,7 +519,7 @@ static void storageTask(void*) {
       lastLog = now;
       obd::Data o = obd::latest();
       bool live = o.state == obd::OBD_LIVE;
-      char spd[8], crs[8], rpm[8], cool[8], intk[8], load[8], thr[8], volt[8], line[160];
+      char spd[8], crs[8], rpm[8], cool[8], intk[8], load[8], thr[8], volt[8], maf[8], fuel[8], line[180];
       fmtOpt(spd, sizeof spd, sh.speedKmh >= 0, "%.0f", sh.speedKmh);
       fmtOpt(crs, sizeof crs, sh.courseDeg >= 0, "%.0f", sh.courseDeg);
       fmtOpt(rpm, sizeof rpm, live && obd::fresh(o.rpmMs), "%.0f", o.rpm);
@@ -465,12 +528,14 @@ static void storageTask(void*) {
       fmtOpt(load, sizeof load, live && obd::fresh(o.loadMs, 10000), "%.0f", o.loadPct);
       fmtOpt(thr, sizeof thr, live && obd::fresh(o.throttleMs, 10000), "%.0f", o.throttlePct);
       fmtOpt(volt, sizeof volt, live && obd::fresh(o.voltsMs, 20000), "%.1f", o.volts);
+      fmtOpt(maf, sizeof maf, live && obd::fresh(o.mafMs), "%.2f", o.mafGs);
+      fmtOpt(fuel, sizeof fuel, sh.fuelLph > -900, "%.2f", sh.fuelLph);
       const char* src = sh.nav == NAV_OBD ? "obd" : sh.nav == NAV_LIVE ? "gps" : "";
       char pit[8], rol[8];   // empty while there is no sensor
       fmtOpt(pit, sizeof pit, sh.sensorOk, "%.1f", sh.pitch);
       fmtOpt(rol, sizeof rol, sh.sensorOk, "%.1f", sh.roll);
-      snprintf(line, sizeof line, "%.1f,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n", now * 1e-3f, pit, rol,
-               spd, src, crs, rpm, cool, intk, load, thr, volt);
+      snprintf(line, sizeof line, "%.1f,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n", now * 1e-3f, pit, rol,
+               spd, src, crs, rpm, cool, intk, load, thr, volt, maf, fuel);
       storage::logWrite(line);
     }
     if (now - lastSync >= LOG_SYNC_S * 1000) { lastSync = now; storage::logSync(); }

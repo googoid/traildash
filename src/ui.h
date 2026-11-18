@@ -4,14 +4,14 @@
 #include <stdint.h>
 #include <stddef.h>
 
-enum Screen : uint8_t { SCREEN_DUAL = 0, SCREEN_SPEED, SCREEN_PEAKS, SCREEN_COUNT };
+enum Screen : uint8_t { SCREEN_SPEED = 0, SCREEN_ENGINE, SCREEN_DUAL, SCREEN_PEAKS, SCREEN_COMPARE, SCREEN_COUNT };
 enum NavState : uint8_t { NAV_NO_PHONE = 0, NAV_NO_FIX, NAV_LIVE, NAV_OBD };   // NAV_OBD: speed from the car
 
 struct UiState {
   float pitch = 0, roll = 0;            // deg, smoothed (+pitch nose up, +roll right side down)
   float peakRollL = 0, peakRollR = 0;   // positive magnitudes
   float peakPitchUp = 0, peakPitchDn = 0;
-  Screen screen = SCREEN_DUAL;
+  Screen screen = SCREEN_SPEED;
   float holdProgress = 0;               // 0..1 long-press progress (0 = not pressing)
   bool  leveling = false;               // level calibration in progress
   bool  levelSet = true;                // a level reference is stored
@@ -29,6 +29,16 @@ struct UiState {
   float speedKmh = -1;                  // <0 = no fresh data
   float courseDeg = -1;                 // 0..360, <0 = unknown
   float maxKmh = 0, tripKm = 0;
+  // engine screen (OBD); values < -900 = not available
+  uint8_t obdState = 0;                 // obd::State: 0 scanning, 1 connecting, 2 init, 3 no answer, 4 live
+  float rpm = -999, coolantC = -999, volts = -999, intakeC = -999, loadPct = -999;
+  float fuelLph = -999;                 // instant fuel flow, L/h
+  float fuelL100 = -999;                // instant consumption, L/100 km (only while moving)
+  float avgL100 = -999;                 // since trip reset
+  // speed comparison screen; < 0 = no fresh data
+  float obdKmh = -1, gpsKmh = -1;
+  float cmpKm = 0;                      // distance compared so far (both sources live, moving)
+  float cmpPct = -999;                  // car vs GPS over that distance, % (+ = car reads high)
   // boot splash (when splash1 != nullptr)
   const char* splash1 = nullptr;
   const char* splash2 = nullptr;

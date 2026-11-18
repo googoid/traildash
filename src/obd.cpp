@@ -266,7 +266,7 @@ static bool poll(uint8_t pid) {
   uint8_t b[2];
   snprintf(c, sizeof c, "01%02X", pid);
   if (!cmd(c, r, sizeof r)) return false;
-  int n = (pid == 0x0C) ? 2 : 1;
+  int n = (pid == 0x0C || pid == 0x10) ? 2 : 1;
   if (!parse01(r, pid, b, n)) return !noAnswer(r) && r[0];   // odd reply: ignore, don't count as dead
   switch (pid) {
     case 0x0D: store(data.speedKmh, data.speedMs, b[0]); break;
@@ -275,6 +275,7 @@ static bool poll(uint8_t pid) {
     case 0x0F: store(data.intakeC, data.intakeMs, b[0] - 40.f); break;
     case 0x04: store(data.loadPct, data.loadMs, b[0] * 100.f / 255.f); break;
     case 0x11: store(data.throttlePct, data.throttleMs, b[0] * 100.f / 255.f); break;
+    case 0x10: store(data.mafGs, data.mafMs, (b[0] * 256 + b[1]) / 100.f); break;
   }
   return true;
 }
@@ -329,9 +330,10 @@ static void session() {
       setState(OBD_LIVE);
     }
 
-    // speed + rpm every round, one slow value each round, voltage now and then
+    // speed, rpm, airflow every round, one slow value each round, voltage now and then
     bool ok = poll(0x0D);
     ok = poll(0x0C) && ok;
+    ok = poll(0x10) && ok;
     ok = poll(slowPids[slow % sizeof slowPids]) && ok;
     if (++slow % 8 == 0) pollVolts();
 

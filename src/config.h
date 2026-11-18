@@ -34,6 +34,21 @@
 #define OBD_SEARCH_TIMEOUT_MS 15000  // first request: the adapter tries every protocol
 #define OBD_RESCAN_MS        3000    // pause between scans when no adapter was found
 
+// Speed comparison screen: car (OBD) vs GPS
+#define CMP_MIN_KMH          20.f    // average only above this (GPS speed is noisy when slow)
+
+// Engine screen
+#define ENGINE_REDLINE_RPM   5000    // red zone of the rev gauge (config.txt: redline)
+#define ENGINE_GAUGE_RPM     6000    // full scale
+#define COOLANT_COLD_C       60      // blue below (engine still cold)
+#define COOLANT_HOT_C        105     // amber from here
+#define COOLANT_DANGER_C     110     // red from here
+// Fuel use from the mass airflow sensor: fuel = air / AFR. Exact at cruise (closed loop);
+// reads low under full throttle, when the engine runs rich.
+#define FUEL_AFR             14.7f   // stoichiometric air/fuel ratio of petrol
+#define FUEL_G_PER_L         745.f   // density of petrol
+#define FUEL_SMOOTH_S        2.0f    // smoothing of the instant consumption
+
 // Remote IMU (remote/: XIAO ESP32-C6 + MPU-6050) — the only tilt sensor
 #define REMOTE_FORWARD       "+x"    // remote sensor axis pointing (roughly) forward: +x -x +y -y +z -z
 #define REMOTE_STALE_MS      500     // no samples this long -> "NO SENSOR"
