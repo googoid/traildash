@@ -28,11 +28,9 @@ static constexpr float CX = 240, CY = 240;
 static constexpr size_t FB_BYTES = 480 * 480 * 2;
 
 static uint16_t* bgDual = nullptr;
-static uint16_t* bgBubble = nullptr;
 static uint16_t* bgPlain = nullptr;
 static uint16_t* bgSpeed = nullptr;
 static uint16_t* bgDualD = nullptr;     // same, with the red danger glow baked in
-static uint16_t* bgBubbleD = nullptr;
 static uint16_t* bgPlainD = nullptr;
 static uint16_t* bgSpeedD = nullptr;
 
@@ -94,21 +92,6 @@ static void radialLine(float r0, float r1, float deg, float w, const Paint& p) {
   gfx.line(x0, y0, x1, y1, w, p);
 }
 
-static void ellipseRing(float cx, float cy, float rx0, float ry0, float rx1, float ry1, const Paint& p) {
-  Path& path = gfx.path_;
-  path.clear();
-  const int n = 160;
-  for (int k = 0; k < 2; k++) {
-    float rx = k ? rx0 : rx1, ry = k ? ry0 : ry1;
-    for (int i = 0; i < n; i++) {
-      float a = 2.f * (float)M_PI * i / n;
-      float x = cx + rx * cosf(a), y = cy + ry * sinf(a);
-      if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
-    }
-    path.close();
-  }
-  gfx.fill(path, p);
-}
 
 static void fmtDeg(char* buf, float v) {
   int d = (int)lroundf(fabsf(v));
@@ -262,28 +245,6 @@ static void buildDual() {
   }
 }
 
-static void buildBubble() {
-  gfx.setTarget(bgBubble);
-  drawBgBase();
-  const float K = 4.6f;  // px per degree
-  // tolerance zones as ellipses (roll on x, pitch on y)
-  ellipseRing(CX, CY, cfg.rollWarnDeg * K - 1.2f, cfg.pitchWarnDeg * K - 1.2f, cfg.rollWarnDeg * K + 1.2f, cfg.pitchWarnDeg * K + 1.2f, Paint(AMBER, 0.55f));
-  ellipseRing(CX, CY, cfg.rollDangerDeg * K - 1.2f, cfg.pitchDangerDeg * K - 1.2f, cfg.rollDangerDeg * K + 1.2f, cfg.pitchDangerDeg * K + 1.2f, Paint(RED, 0.55f));
-  ellipseRing(CX, CY, 0, 0, cfg.rollWarnDeg * K, cfg.pitchWarnDeg * K, Paint(GREEN, 0.05f));
-  for (int d = 10; d <= 40; d += 10) {
-    float r = d * K;
-    gfx.ring(CX, CY, r - 0.7f, r + 0.7f, Paint(0x2B3846));
-    char b[6]; snprintf(b, sizeof b, "%d°", d);
-    gfx.text(font_tiny, b, CX + r * 0.7071f + 4, CY - r * 0.7071f - 3, 0x5A6876, -1);
-  }
-  gfx.line(CX - 205, CY, CX + 205, CY, 1.0f, Paint(0x223040));
-  gfx.line(CX, CY - 205, CX, CY + 205, 1.0f, Paint(0x223040));
-  gfx.ring(CX, CY, 22, 23.4f, Paint(0x5A6876));  // target circle
-  gfx.text(font_small, "FRONT", CX, 30, DIM, 0);
-  gfx.text(font_tiny, "L", 26, CY + 5, DIM, 0);
-  gfx.text(font_tiny, "R", 454, CY + 5, DIM, 0);
-}
-
 static void buildPlain() {
   gfx.setTarget(bgPlain);
   drawBgBase();
@@ -306,26 +267,23 @@ static void buildSpeed() {
 
 bool begin(void* (*alloc)(size_t), void (*flush)(void*, size_t)) {
   bgDual = (uint16_t*)alloc(FB_BYTES);
-  bgBubble = (uint16_t*)alloc(FB_BYTES);
   bgPlain = (uint16_t*)alloc(FB_BYTES);
   bgDualD = (uint16_t*)alloc(FB_BYTES);
-  bgBubbleD = (uint16_t*)alloc(FB_BYTES);
   bgPlainD = (uint16_t*)alloc(FB_BYTES);
   bgSpeed = (uint16_t*)alloc(FB_BYTES);
   bgSpeedD = (uint16_t*)alloc(FB_BYTES);
-  if (!bgDual || !bgBubble || !bgPlain || !bgDualD || !bgBubbleD || !bgPlainD || !bgSpeed || !bgSpeedD) return false;
+  if (!bgDual || !bgPlain || !bgDualD || !bgPlainD || !bgSpeed || !bgSpeedD) return false;
   buildDual();
-  buildBubble();
   buildPlain();
   buildSpeed();
-  uint16_t* src[4] = {bgDual, bgBubble, bgPlain, bgSpeed};
-  uint16_t* dst[4] = {bgDualD, bgBubbleD, bgPlainD, bgSpeedD};
-  for (int i = 0; i < 4; i++) {
+  uint16_t* src[3] = {bgDual, bgPlain, bgSpeed};
+  uint16_t* dst[3] = {bgDualD, bgPlainD, bgSpeedD};
+  for (int i = 0; i < 3; i++) {
     memcpy(dst[i], src[i], FB_BYTES);
     gfx.setTarget(dst[i]);
     gfx.glowRing(CX, CY, 239, 30, RED, 0.75f);
   }
-  if (flush) for (uint16_t* b : {bgDual, bgBubble, bgPlain, bgSpeed, bgDualD, bgBubbleD, bgPlainD, bgSpeedD}) flush(b, FB_BYTES);
+  if (flush) for (uint16_t* b : {bgDual, bgPlain, bgSpeed, bgDualD, bgPlainD, bgSpeedD}) flush(b, FB_BYTES);
   return true;
 }
 
@@ -405,33 +363,6 @@ static void renderDual(const UiState& s) {
     float tri[6] = {x, y + 5 * sgn, x - 6, y - 4 * sgn, x + 6, y - 4 * sgn};
     gfx.poly(tri, 3, Paint(pc));
   }
-}
-
-static void renderBubble(const UiState& s) {
-  const float K = 4.6f;
-  float bx = -s.roll * K, by = -s.pitch * K;
-  float d = sqrtf(bx * bx + by * by);
-  if (d > 196) { bx *= 196 / d; by *= 196 / d; }
-  bx += CX; by += CY;
-  float sr = fmaxf(fabsf(s.roll) / cfg.rollDangerDeg, fabsf(s.pitch) / cfg.pitchDangerDeg);
-  uint32_t c = sr >= 1 ? RED : (fabsf(s.roll) >= cfg.rollWarnDeg || fabsf(s.pitch) >= cfg.pitchWarnDeg ? AMBER : GREEN);
-
-  // line from centre to bubble
-  gfx.line(CX, CY, bx, by, 1.6f, Paint(c, 0.45f));
-  // shadow, body, rim, highlight
-  gfx.circle(bx + 4, by + 7, 30, Paint(0x000000, 0.35f));
-  gfx.circle(bx, by, 30, Paint::radial(bx - 8, by - 10, 42, lerpColor(c, 0xFFFFFF, 0.55f), scaleColor(c, 0.55f)));
-  gfx.ring(bx, by, 28.5f, 30.5f, Paint(lerpColor(c, 0xFFFFFF, 0.4f), 0.8f));
-  gfx.circle(bx - 10, by - 11, 8, Paint(0xFFFFFF, 0.55f));
-  gfx.circle(bx - 12, by - 13, 3.5f, Paint(0xFFFFFF, 0.8f));
-
-  char v[12];
-  gfx.text(font_tiny, "PITCH", 186, 418, DIM, 0);
-  fmtDeg(v, s.pitch);
-  gfx.text(font_med, v, 186, 446, fabsf(s.pitch) >= cfg.pitchWarnDeg ? sevColor(s.pitch, cfg.pitchWarnDeg, cfg.pitchDangerDeg) : TXT, 0);
-  gfx.text(font_tiny, "ROLL", 294, 418, DIM, 0);
-  fmtDeg(v, s.roll);
-  gfx.text(font_med, v, 294, 446, fabsf(s.roll) >= cfg.rollWarnDeg ? sevColor(s.roll, cfg.rollWarnDeg, cfg.rollDangerDeg) : TXT, 0);
 }
 
 static void peakCell(float cx, float cy, const char* label, float v, float warn, float danger, int dir) {
@@ -604,7 +535,6 @@ const uint16_t* background(const UiState& s) {
   const bool d = inDanger(s);
   switch (s.screen) {
     case SCREEN_DUAL:   return d ? bgDualD : bgDual;
-    case SCREEN_BUBBLE: return d ? bgBubbleD : bgBubble;
     case SCREEN_PEAKS:  return d ? bgPlainD : bgPlain;
     case SCREEN_SPEED:  return d ? bgSpeedD : bgSpeed;
     default:            return nullptr;   // drawn procedurally
@@ -621,7 +551,6 @@ void prepare(const UiState& s) {
   } else {
     switch (s.screen) {
       case SCREEN_DUAL:    renderDual(s); break;
-      case SCREEN_BUBBLE:  renderBubble(s); break;
       case SCREEN_PEAKS:   renderPeaks(s); break;
       case SCREEN_SPEED:   renderSpeed(s); break;
       default: break;

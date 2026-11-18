@@ -1,7 +1,7 @@
 # Car Inclinometer — Waveshare ESP32-S3-Touch-LCD-2.8C
 
 Round 480×480 off-road inclinometer: tilting vehicle silhouettes,
-bubble level and peak-angle memory, with amber/red warning zones and a buzzer alarm,
+peak-angle memory, with amber/red warning zones and a buzzer alarm,
 plus a GPS speed / heading / trip screen fed by an iPhone app over Bluetooth LE.
 
 ## Build & flash
@@ -27,7 +27,7 @@ The project is under git (branch `main`). Work like this:
 
 | Action | Effect |
 |---|---|
-| Tap | Next screen: dual gauge → GPS speed → bubble → peaks |
+| Tap | Next screen: dual gauge → speed → peaks |
 | Hold 2 s | **Set level** — park on flat ground first. The screen blinks off briefly while it is saved. |
 | Hold 2 s on the speed screen | Reset max speed and trip distance |
 | Double-tap | Reset peak angles |

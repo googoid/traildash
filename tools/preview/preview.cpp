@@ -46,7 +46,6 @@ int main(int argc, char** argv) {
     {"dual_mild",    mk(SCREEN_DUAL, 8.3f, -6.4f)},
     {"dual_warn",    mk(SCREEN_DUAL, 17.f, 23.6f)},
     {"dual_danger",  mk(SCREEN_DUAL, -38.f, 31.f)},
-    {"bubble",       mk(SCREEN_BUBBLE, 7.f, -12.f)},
     {"peaks",        mk(SCREEN_PEAKS, 0, 0)},
     {"hold",         mk(SCREEN_DUAL, 2.f, 1.f)},
     {"toast",        mk(SCREEN_DUAL, 0.f, 0.f)},
@@ -54,11 +53,11 @@ int main(int argc, char** argv) {
     {"speed_nophone",mk(SCREEN_SPEED, 2.f, 1.f)},
     {"speed_hold",   mk(SCREEN_SPEED, 2.f, 1.f)},
   };
-  shots[5].s.holdProgress = 0.62f;
-  shots[6].s.toast = "LEVEL SET"; shots[6].s.toastAge = 1.0f;
-  for (int i = 7; i <= 9; i++) { shots[i].s.maxKmh = 112; shots[i].s.tripKm = 48.6f; }
-  shots[7].s.nav = NAV_LIVE; shots[7].s.speedKmh = 87.4f; shots[7].s.courseDeg = 47.f;
-  shots[9].s.nav = NAV_LIVE; shots[9].s.speedKmh = 0; shots[9].s.courseDeg = 312.f; shots[9].s.holdProgress = 0.45f;
+  shots[4].s.holdProgress = 0.62f;
+  shots[5].s.toast = "LEVEL SET"; shots[5].s.toastAge = 1.0f;
+  for (int i = 6; i <= 8; i++) { shots[i].s.maxKmh = 112; shots[i].s.tripKm = 48.6f; }
+  shots[6].s.nav = NAV_LIVE; shots[6].s.speedKmh = 87.4f; shots[6].s.courseDeg = 47.f;
+  shots[8].s.nav = NAV_LIVE; shots[8].s.speedKmh = 0; shots[8].s.courseDeg = 312.f; shots[8].s.holdProgress = 0.45f;
 
   for (auto& sh : shots) {
     auto t0 = std::chrono::high_resolution_clock::now();

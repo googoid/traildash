@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-enum Screen : uint8_t { SCREEN_DUAL = 0, SCREEN_SPEED, SCREEN_BUBBLE, SCREEN_PEAKS, SCREEN_COUNT };
+enum Screen : uint8_t { SCREEN_DUAL = 0, SCREEN_SPEED, SCREEN_PEAKS, SCREEN_COUNT };
 enum NavState : uint8_t { NAV_NO_PHONE = 0, NAV_NO_FIX, NAV_LIVE, NAV_OBD };   // NAV_OBD: speed from the car
 
 struct UiState {

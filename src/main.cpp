@@ -1,6 +1,6 @@
 // Car inclinometer for the Waveshare ESP32-S3-Touch-LCD-2.8C
 //
-//  Tap            next screen   (dual gauge -> GPS speed -> bubble -> peaks)
+//  Tap            next screen   (dual gauge -> speed -> peaks)
 //  Hold 2 s       set level (park on flat ground first; stored in flash, screen blinks)
 //                 on the speed screen: reset max speed + trip instead
 //  Double-tap     reset peak values
