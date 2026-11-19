@@ -27,4 +27,12 @@ void parseKv(const char* text, void (*fn)(const char* key, const char* val, void
 void apply(const char* text, void (*unknown)(const char* key) = nullptr);
 // The full config file for the current cfg, with comments.
 size_t format(char* out, size_t size);
+
+// Phone app (BLE, see ble.h): the current cfg as bare "key=value" lines ...
+size_t formatCompact(char* out, size_t size);
+// ... and changes from it: "key=value" lines, validated on a copy of cfg, then swapped in.
+// Returns false if the text held no known setting.
+bool update(const char* text);
+// Counts changes made by update() (the SD task rewrites config.txt when it moves).
+uint32_t revision();
 }  // namespace settings

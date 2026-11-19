@@ -5,6 +5,10 @@ import CoreLocation
 enum NavProtocol {
     static let service = CBUUID(string: "CCCF9685-6127-47E1-9884-2E68EF1D44A3")
     static let characteristic = CBUUID(string: "1CCA3ED6-DCF2-4A66-A435-AB5016547E5A")
+    /// Settings: read = "key=value" lines (status + settings), write = lines to change. See DeviceConfig.
+    static let config = CBUUID(string: "1219E800-95D4-4A08-9572-1D76DCB4B1FF")
+    /// Actions: write one byte (DeviceCommand).
+    static let control = CBUUID(string: "CA5380E5-BE5F-4B00-8875-DB58900DAEAC")
 
     static let flagSpeed: UInt8 = 0x01
     static let flagCourse: UInt8 = 0x02

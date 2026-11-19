@@ -36,6 +36,10 @@ bool saveState(const PersistState& s);
 bool logOpen(uint32_t no, const char* header);
 bool logWrite(const char* line);   // buffered
 void logSync();                    // push buffered rows to the card (call every few seconds)
+void logClose();
+
+// Rewrite config.txt from cfg (settings changed in the phone app).
+bool saveConfig();
 
 // Append text to /incl/<name> (rotated to <name>.old above 512 KB).
 bool appendText(const char* name, const char* text, size_t len);

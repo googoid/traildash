@@ -198,6 +198,15 @@ static void sensorTask(void*) {
       float hb = btnPress.update(digitalRead(PIN_BOOT_BTN) == LOW, now, false);
       sh.holdProgress = fmaxf(hp, hb);
 
+      // phone app (settings screen): actions, and the status it shows
+      switch (blelink::takeCommand()) {
+        case CMD_SET_LEVEL: startLevel(); break;
+        case CMD_RESET_PEAKS: resetPeaks(); showToast("PEAKS RESET"); break;
+        case CMD_RESET_TRIP: resetTrip(); showToast("TRIP RESET"); break;
+        default: break;
+      }
+      blelink::setStatus(storage::mounted(), sh.sensorOk, sh.levelSet, sh.leveling);
+
       // GPS speed / heading / trip
       NavFix f = blelink::latest();
       bool fresh = f.seq && now - f.rxMs < NAV_STALE_MS;
@@ -364,6 +373,7 @@ static void saveLevel() {
 
 static void renderTask(void*) {
   bool backlightOff = true;    // setup() leaves it off after the boot badge
+  uint8_t backlight = 0;       // level set now (follows cfg.backlight, changed in the phone app)
   UiState st;
   uint32_t last = micros();
   const uint32_t bootMs = millis();
@@ -424,8 +434,12 @@ static void renderTask(void*) {
     board::present();
     if (backlightOff) {   // back on once a complete frame is in the new buffers
       board::waitFrame();
-      board::fadeBacklight(0, cfg.backlight, 400);
+      backlight = cfg.backlight;
+      board::fadeBacklight(0, backlight, 400);
       backlightOff = false;
+    } else if (cfg.backlight != backlight) {
+      backlight = cfg.backlight;
+      board::setBacklight(backlight);
     }
 
     if (sh.fbCheck) {   // frame-buffer readback: is every row really drawn?
@@ -486,19 +500,41 @@ static void fmtOpt(char* b, size_t n, bool ok, const char* fmt, float v) {
 // Low priority: level reference, peaks/trip, drive log. SD writes can take
 // tens of ms, so none of this runs in the sensor or render task.
 static void storageTask(void*) {
-  if (cfg.log)
+  // Drive log: opened here, and started / stopped when the phone app switches it.
+  // loadFromSd() reserved a log number if logging was on at power-up.
+  bool logOn = false, logNoFree = cfg.log;
+  auto updateLog = [&] {
+    if (cfg.log == logOn) return;
+    logOn = cfg.log;
+    if (!logOn) { storage::logClose(); return; }
+    if (!logNoFree) { saved.logNo++; storage::saveState(saved); }
+    logNoFree = false;
     storage::logOpen(saved.logNo,
                      "t_s,pitch,roll,speed_kmh,speed_src,course,rpm,coolant_c,intake_c,load_pct,throttle_pct,obd_volts,maf_gs,fuel_lph\n");
+  };
+  updateLog();
   {
     char b[48];
     int n = snprintf(b, sizeof b, "\n=== power-up, drive log %05lu ===\n", (unsigned long)saved.logNo);
     storage::appendText("obd.txt", b, n);
   }
   uint32_t lastSave = millis(), lastLog = 0, lastSync = millis(), lastObd = 0;
-  const uint32_t logMs = (uint32_t)(cfg.logIntervalS * 1000);
+  uint32_t cfgRev = settings::revision(), cfgChangedAt = 0;
   for (;;) {
     vTaskDelay(pdMS_TO_TICKS(100));
     uint32_t now = millis();
+
+    // settings changed in the phone app: save once they've been still for a second
+    // (a brightness slider sends a stream of changes)
+    uint32_t rev = settings::revision();
+    if (rev != cfgRev) { cfgRev = rev; cfgChangedAt = now ? now : 1; }
+    if (cfgChangedAt && now - cfgChangedAt >= 1000) {
+      cfgChangedAt = 0;
+      bool ok = storage::saveConfig();
+      Serial.printf("[sd] config.txt saved%s\n", ok ? "" : " - FAILED");
+      if (!ok) showToast("SD WRITE FAILED");
+    }
+    updateLog();
 
     float m[9];
     if (tilt::takePendingLevel(m)) {
@@ -518,7 +554,7 @@ static void storageTask(void*) {
       lastSave = now;
     }
 
-    if (cfg.log && now - lastLog >= logMs) {
+    if (logOn && now - lastLog >= (uint32_t)(cfg.logIntervalS * 1000)) {
       lastLog = now;
       obd::Data o = obd::latest();
       bool live = o.state == obd::OBD_LIVE;

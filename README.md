@@ -66,7 +66,17 @@ Open `ios/InclinoLink.xcodeproj` in Xcode, pick your team under *Signing & Capab
   covers that with low-power location monitoring (the location arrow then stays on).
 - With a free Apple ID the app must be re-installed from Xcode every 7 days.
 
-Protocol (service/characteristic UUIDs, 10-byte packet) is documented in `src/ble.h`.
+### Device settings in the app
+
+*InclinoLink → Device Settings* (while the inclinometer is connected) changes the `config.txt`
+settings live: warning/danger angles, alarm sound, brightness (the screen follows the slider), rev
+gauge red zone, drive log on/off + interval, remote IMU forward axis and OBD adapter name.
+Changes apply at once and are written to `config.txt` a second after the last one (without an SD
+card they last until power-off). It also has **Set level**, **Reset peaks** and **Reset trip**.
+A new forward axis needs *Set level* again.
+Debug builds started with the launch argument `-demoDevice` show the screen with a pretend device.
+
+Protocol (service/characteristic UUIDs, 10-byte packet, settings text, action bytes) is documented in `src/ble.h`.
 
 ## Remote IMU (`remote/`) — the tilt sensor
 

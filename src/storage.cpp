@@ -180,6 +180,12 @@ void logSync() {
   fsync(fileno(logF));   // updates the file size in the directory: rows survive a power cut
 }
 
+void logClose() {
+  if (!logF) return;
+  fclose(logF);
+  logF = nullptr;
+}
+
 bool appendText(const char* name, const char* text, size_t len) {
   if (!ok) return false;
   char path[48], old[56];
@@ -264,6 +270,17 @@ bool begin() {
   }
   heap_caps_free(buf);
   return true;
+}
+
+bool saveConfig() {
+  if (!ok) return false;
+  const size_t bufSize = 2048;
+  char* buf = (char*)heap_caps_malloc(bufSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!buf) return false;
+  settings::format(buf, bufSize);
+  bool good = writeFile(SDDIR "/config.txt", buf);
+  heap_caps_free(buf);
+  return good;
 }
 
 }  // namespace storage

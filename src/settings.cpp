@@ -34,34 +34,78 @@ void parseKv(const char* text, void (*fn)(const char*, const char*, void*), void
 
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 
-static void applyOne(const char* k, const char* v, void* ctx) {
-  auto unknown = (void (*)(const char*))ctx;
+// One "key = value" line into ctx->s. Values are clamped to sane ranges here, so whatever
+// arrives (hand-edited file, phone app) can't break the device.
+struct ApplyCtx {
+  Settings* s;
+  void (*unknown)(const char* key);
+  int known = 0;   // settings recognised
+};
+
+static void applyOne(const char* k, const char* v, void* p) {
+  ApplyCtx& c = *(ApplyCtx*)p;
+  Settings& s = *c.s;
   float f = (float)atof(v);
-  if (!strcmp(k, "roll_warn")) cfg.rollWarnDeg = clampf(f, 1, 60);
-  else if (!strcmp(k, "roll_danger")) cfg.rollDangerDeg = clampf(f, 1, 60);
-  else if (!strcmp(k, "pitch_warn")) cfg.pitchWarnDeg = clampf(f, 1, 60);
-  else if (!strcmp(k, "pitch_danger")) cfg.pitchDangerDeg = clampf(f, 1, 60);
-  else if (!strcmp(k, "buzzer")) cfg.buzzer = f != 0;
-  else if (!strcmp(k, "backlight")) cfg.backlight = (uint8_t)clampf(f, 5, 100);
-  else if (!strcmp(k, "log")) cfg.log = f != 0;
-  else if (!strcmp(k, "log_interval")) cfg.logIntervalS = clampf(f, 0.2f, 60);
+  if (!strcmp(k, "roll_warn")) s.rollWarnDeg = clampf(f, 1, 60);
+  else if (!strcmp(k, "roll_danger")) s.rollDangerDeg = clampf(f, 1, 60);
+  else if (!strcmp(k, "pitch_warn")) s.pitchWarnDeg = clampf(f, 1, 60);
+  else if (!strcmp(k, "pitch_danger")) s.pitchDangerDeg = clampf(f, 1, 60);
+  else if (!strcmp(k, "buzzer")) s.buzzer = f != 0;
+  else if (!strcmp(k, "backlight")) s.backlight = (uint8_t)clampf(f, 5, 100);
+  else if (!strcmp(k, "log")) s.log = f != 0;
+  else if (!strcmp(k, "log_interval")) s.logIntervalS = clampf(f, 0.2f, 60);
   else if (!strcmp(k, "obd_name")) {
     size_t i = 0;
-    for (; v[i] && i < sizeof cfg.obdName - 1; i++) cfg.obdName[i] = (char)tolower((unsigned char)v[i]);
-    cfg.obdName[i] = 0;
+    for (; v[i] && i < sizeof s.obdName - 1; i++) s.obdName[i] = (char)tolower((unsigned char)v[i]);
+    s.obdName[i] = 0;
   } else if (!strcmp(k, "remote_forward")) {
     char sg = v[0] == '-' ? '-' : '+';
     char ax = (char)tolower((unsigned char)(v[0] == '-' || v[0] == '+' ? v[1] : v[0]));
-    if (ax == 'x' || ax == 'y' || ax == 'z') { cfg.remoteForward[0] = sg; cfg.remoteForward[1] = ax; cfg.remoteForward[2] = 0; }
-  } else if (!strcmp(k, "redline")) cfg.redlineRpm = clampf(f, 2000, ENGINE_GAUGE_RPM);
-  else if (unknown) unknown(k);
+    if (ax == 'x' || ax == 'y' || ax == 'z') { s.remoteForward[0] = sg; s.remoteForward[1] = ax; s.remoteForward[2] = 0; }
+  } else if (!strcmp(k, "redline")) s.redlineRpm = clampf(f, 2000, ENGINE_GAUGE_RPM);
+  else {
+    if (c.unknown) c.unknown(k);
+    return;
+  }
+  c.known++;
+}
+
+static void fixup(Settings& s) {
+  // danger must lie beyond warn
+  if (s.rollDangerDeg < s.rollWarnDeg + 1) s.rollDangerDeg = s.rollWarnDeg + 1;
+  if (s.pitchDangerDeg < s.pitchWarnDeg + 1) s.pitchDangerDeg = s.pitchWarnDeg + 1;
 }
 
 void apply(const char* text, void (*unknown)(const char*)) {
-  parseKv(text, applyOne, (void*)unknown);
-  // danger must lie beyond warn
-  if (cfg.rollDangerDeg < cfg.rollWarnDeg + 1) cfg.rollDangerDeg = cfg.rollWarnDeg + 1;
-  if (cfg.pitchDangerDeg < cfg.pitchWarnDeg + 1) cfg.pitchDangerDeg = cfg.pitchWarnDeg + 1;
+  ApplyCtx c{&cfg, unknown};
+  parseKv(text, applyOne, &c);
+  fixup(cfg);
+}
+
+static volatile uint32_t rev = 0;
+uint32_t revision() { return rev; }
+
+bool update(const char* text) {
+  Settings s = cfg;   // a copy: the other tasks never see a half-applied change
+  ApplyCtx c{&s, nullptr};
+  parseKv(text, applyOne, &c);
+  if (!c.known) return false;
+  fixup(s);
+  if (memcmp(&s, &cfg, sizeof s) != 0) {   // padding is equal too: s started as a copy
+    cfg = s;
+    rev = rev + 1;
+  }
+  return true;
+}
+
+size_t formatCompact(char* out, size_t size) {
+  int n = snprintf(out, size,
+      "roll_warn=%g\nroll_danger=%g\npitch_warn=%g\npitch_danger=%g\nbuzzer=%d\nbacklight=%u\n"
+      "log=%d\nlog_interval=%g\nobd_name=%s\nremote_forward=%s\nredline=%g\n",
+      cfg.rollWarnDeg, cfg.rollDangerDeg, cfg.pitchWarnDeg, cfg.pitchDangerDeg, cfg.buzzer ? 1 : 0,
+      (unsigned)cfg.backlight, cfg.log ? 1 : 0, cfg.logIntervalS, cfg.obdName, cfg.remoteForward,
+      cfg.redlineRpm);
+  return n < 0 ? 0 : (size_t)n < size ? (size_t)n : size - 1;
 }
 
 size_t format(char* out, size_t size) {

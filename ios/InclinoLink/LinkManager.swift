@@ -18,6 +18,11 @@ import CoreLocation
 /// location pill) alive after the app is closed. Plain background updates end with the app.
 /// The manager is created at process launch (`shared`), not by the UI, because a background
 /// relaunch doesn't build any SwiftUI views.
+///
+/// Device settings (see DeviceConfig): read on every connect; a change updates `config` at once
+/// (the UI never waits) and is written in the background — one write in flight, later changes
+/// merged into the next one, so a dragged slider doesn't queue up dozens of writes. When the
+/// writes settle, the settings are read back, so the UI shows what the device really applied.
 final class LinkManager: NSObject, ObservableObject {
     static let shared = LinkManager()
 
@@ -34,6 +39,17 @@ final class LinkManager: NSObject, ObservableObject {
     @Published private(set) var lastLocation: CLLocation?
     @Published private(set) var locationAuth: CLAuthorizationStatus = .notDetermined
     @Published private(set) var packetsSent = 0
+
+    enum ConfigState {
+        case unavailable   // not connected
+        case loading       // connected, settings not read yet
+        case ready
+        case unsupported   // firmware without the settings characteristic
+    }
+    @Published private(set) var configState: ConfigState = .unavailable
+    @Published private(set) var config = DeviceConfig()
+    @Published private(set) var configSaving = false
+    @Published var configError: String?
     @Published var enabled: Bool {
         didSet {
             UserDefaults.standard.set(enabled, forKey: Keys.enabled)
@@ -58,6 +74,13 @@ final class LinkManager: NSObject, ObservableObject {
     private let location = CLLocationManager()
     private var peripheral: CBPeripheral?
     private var navChar: CBCharacteristic?
+    private var configChar: CBCharacteristic?
+    private var controlChar: CBCharacteristic?
+
+    private var pendingConfig: [String: String] = [:]   // changed locally, not written yet
+    private var writingConfig: [String: String]?        // the write in flight
+    private var readWaiters: [CheckedContinuation<Void, Never>] = []
+    private var commandWaiter: CheckedContinuation<Void, Error>?
 
     private var savedPeripheralID: UUID? {
         get { UserDefaults.standard.string(forKey: Keys.peripheral).flatMap(UUID.init) }
@@ -141,7 +164,7 @@ final class LinkManager: NSObject, ObservableObject {
         updateRelaunchMonitoring()
         if central.isScanning { central.stopScan() }
         if let p = peripheral { central.cancelPeripheralConnection(p) }
-        navChar = nil
+        dropCharacteristics()
         if central.state == .poweredOn { bleState = .searching }
     }
 
@@ -149,7 +172,7 @@ final class LinkManager: NSObject, ObservableObject {
     func forgetDevice() {
         if let p = peripheral { central.cancelPeripheralConnection(p) }
         peripheral = nil
-        navChar = nil
+        dropCharacteristics()
         deviceName = nil
         savedPeripheralID = nil
         connectOrScan()
@@ -186,6 +209,96 @@ final class LinkManager: NSObject, ObservableObject {
         }
     }
 
+    // MARK: device settings
+
+    /// Change settings on the device. `config` shows the new values immediately.
+    func setConfig(_ changes: [String: String]) {
+        guard configState == .ready else { return }
+        for (k, v) in changes where config.values[k] != v {
+            config.set(k, v)
+            pendingConfig[k] = v
+        }
+        flushConfig()
+    }
+
+    func setConfig(_ key: String, _ value: String) { setConfig([key: value]) }
+
+    /// Read the settings and device status again; returns when the answer is in (or the link drops).
+    @MainActor
+    func reloadConfig() async {
+        guard configChar != nil else { return }
+        await withCheckedContinuation { cont in
+            readWaiters.append(cont)
+            readConfig()
+        }
+    }
+
+    /// Run an action on the device; returns once the device has accepted it.
+    @MainActor
+    func perform(_ command: DeviceCommand) async throws {
+        guard let p = peripheral, p.state == .connected else { throw DeviceLinkError.notConnected }
+        guard let c = controlChar else { throw DeviceLinkError.unsupported }
+        guard commandWaiter == nil else { throw DeviceLinkError.busy }
+        try await withCheckedThrowingContinuation { cont in
+            commandWaiter = cont
+            p.writeValue(Data([command.rawValue]), for: c, type: .withResponse)
+        }
+    }
+
+    private func readConfig() {
+        guard let p = peripheral, let c = configChar, p.state == .connected else {
+            let waiters = readWaiters
+            readWaiters = []
+            waiters.forEach { $0.resume() }
+            return
+        }
+        p.readValue(for: c)
+    }
+
+    private func flushConfig() {
+        guard writingConfig == nil, !pendingConfig.isEmpty,
+              let p = peripheral, let c = configChar, p.state == .connected else { return }
+        writingConfig = pendingConfig
+        pendingConfig = [:]
+        configSaving = true
+        p.writeValue(DeviceConfig.encode(writingConfig!), for: c, type: .withResponse)
+    }
+
+    #if DEBUG
+    /// A pretend inclinometer for SwiftUI previews and the simulator (launch argument
+    /// `-demoDevice`): settings can be edited, nothing is sent.
+    private var demo = false
+
+    func loadDemoDevice() {
+        demo = true
+        configState = .ready
+        config = DeviceConfig(data: Data("""
+            v=1\ncard=1\nsensor=1\nlevel=1\nleveling=0\nroll_warn=20\nroll_danger=30\npitch_warn=25
+            pitch_danger=35\nbuzzer=1\nbacklight=85\nlog=1\nlog_interval=1\nobd_name=\nremote_forward=+x
+            redline=5000\nobd_probe=1
+            """.utf8))
+    }
+    #endif
+
+    /// The link is gone: forget the characteristics and fail whatever was waiting on them.
+    private func dropCharacteristics() {
+        #if DEBUG
+        if demo { return }
+        #endif
+        navChar = nil
+        configChar = nil
+        controlChar = nil
+        configState = .unavailable
+        pendingConfig = [:]
+        writingConfig = nil
+        configSaving = false
+        let waiters = readWaiters
+        readWaiters = []
+        waiters.forEach { $0.resume() }
+        commandWaiter?.resume(throwing: DeviceLinkError.notConnected)
+        commandWaiter = nil
+    }
+
     private func send(_ loc: CLLocation) {
         guard let p = peripheral, let c = navChar, p.state == .connected else { return }
         // CoreLocation can hand out a cached fix first; never forward stale data.
@@ -216,7 +329,7 @@ extension LinkManager: CBCentralManagerDelegate, CBPeripheralDelegate {
             bleState = .unauthorized
         default:
             bleState = .off
-            navChar = nil
+            dropCharacteristics()
             stopLocation()
         }
     }
@@ -236,7 +349,7 @@ extension LinkManager: CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral p: CBPeripheral, error: Error?) {
-        navChar = nil
+        dropCharacteristics()
         stopLocation()
         guard enabled, p == peripheral else { return }
         bleState = .connecting
@@ -251,12 +364,62 @@ extension LinkManager: CBCentralManagerDelegate, CBPeripheralDelegate {
 
     func peripheral(_ p: CBPeripheral, didDiscoverServices error: Error?) {
         guard let s = p.services?.first(where: { $0.uuid == NavProtocol.service }) else { return }
-        p.discoverCharacteristics([NavProtocol.characteristic], for: s)
+        p.discoverCharacteristics([NavProtocol.characteristic, NavProtocol.config, NavProtocol.control], for: s)
     }
 
     func peripheral(_ p: CBPeripheral, didDiscoverCharacteristicsFor s: CBService, error: Error?) {
-        navChar = s.characteristics?.first(where: { $0.uuid == NavProtocol.characteristic })
+        let chars = s.characteristics ?? []
+        navChar = chars.first { $0.uuid == NavProtocol.characteristic }
+        configChar = chars.first { $0.uuid == NavProtocol.config }
+        controlChar = chars.first { $0.uuid == NavProtocol.control }
         if navChar != nil { startLocation() }
+        if configChar != nil {
+            if configState != .ready { configState = .loading }
+            readConfig()
+        } else {
+            configState = .unsupported
+        }
+    }
+
+    func peripheral(_ p: CBPeripheral, didUpdateValueFor c: CBCharacteristic, error: Error?) {
+        guard c.uuid == NavProtocol.config else { return }
+        if error == nil, let data = c.value {
+            // keep local edits that the device hasn't confirmed yet
+            var merged = DeviceConfig(data: data)
+            for (k, v) in (writingConfig ?? [:]).merging(pendingConfig, uniquingKeysWith: { $1 }) {
+                merged.set(k, v)
+            }
+            config = merged
+            configState = .ready
+        } else if configState == .loading {
+            configError = error?.localizedDescription ?? "Couldn't read the settings."
+        }
+        let waiters = readWaiters
+        readWaiters = []
+        waiters.forEach { $0.resume() }
+    }
+
+    func peripheral(_ p: CBPeripheral, didWriteValueFor c: CBCharacteristic, error: Error?) {
+        switch c.uuid {
+        case NavProtocol.config:
+            writingConfig = nil
+            if let error {
+                configError = "The setting wasn't changed: \(error.localizedDescription)"
+                pendingConfig = [:]
+            }
+            if pendingConfig.isEmpty {
+                configSaving = false
+                readConfig()   // show what the device applied (values are clamped there)
+            } else {
+                flushConfig()
+            }
+        case NavProtocol.control:
+            let waiter = commandWaiter
+            commandWaiter = nil
+            if let error { waiter?.resume(throwing: error) } else { waiter?.resume() }
+        default:
+            break
+        }
     }
 }
 

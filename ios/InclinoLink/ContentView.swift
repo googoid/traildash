@@ -4,6 +4,11 @@ import CoreLocation
 struct ContentView: View {
     @EnvironmentObject private var link: LinkManager
     @Environment(\.scenePhase) private var scenePhase
+    #if DEBUG
+    @State private var showSettings = ProcessInfo.processInfo.arguments.contains("-demoDevice")
+    #else
+    @State private var showSettings = false
+    #endif
 
     var body: some View {
         NavigationStack {
@@ -18,6 +23,11 @@ struct ContentView: View {
                     row("Bluetooth", link.bleState.rawValue, color: bleColor)
                     if let name = link.deviceName { row("Device", name) }
                     row("Packets sent", "\(link.packetsSent)")
+                    NavigationLink {
+                        DeviceSettingsView()
+                    } label: {
+                        Label("Device Settings", systemImage: "slider.horizontal.3")
+                    }
                     if link.hasRememberedDevice {
                         Button("Forget device", role: .destructive) { link.forgetDevice() }
                     }
@@ -60,6 +70,7 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("InclinoLink")
+            .navigationDestination(isPresented: $showSettings) { DeviceSettingsView() }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { link.requestLocationIfNeeded() }
             }

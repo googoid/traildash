@@ -6,7 +6,12 @@ struct InclinoLinkApp: App {
     // significant location change), where no UI is built.
     @StateObject private var link = LinkManager.shared
 
-    init() { _ = LinkManager.shared }
+    init() {
+        _ = LinkManager.shared
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-demoDevice") { LinkManager.shared.loadDemoDevice() }
+        #endif
+    }
 
     var body: some Scene {
         WindowGroup {

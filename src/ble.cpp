@@ -1,9 +1,11 @@
 #include "ble.h"
 #include "config.h"
 #include "remote.h"
+#include "settings.h"
 #include "imu_link.h"
 #include <Arduino.h>
 #include <NimBLEDevice.h>
+#include <esp_heap_caps.h>
 
 // the remote IMU finds the inclinometer by the advertised NAV service
 static constexpr bool streq(const char* a, const char* b) { return *a == *b && (!*a || streq(a + 1, b + 1)); }
@@ -57,6 +59,51 @@ class NavCb : public NimBLECharacteristicCallbacks {
   }
 };
 
+// Settings for the phone app (see ble.h). Runs in the NimBLE host task.
+static volatile uint8_t command = CMD_NONE;
+static volatile uint8_t status = 0;   // bit0 card, bit1 sensor, bit2 level set, bit3 leveling
+static char* cfgBuf = nullptr;        // PSRAM (internal RAM is short); only the host task uses it
+
+static bool cfgBuffer() {
+  if (!cfgBuf) cfgBuf = (char*)heap_caps_malloc(CFG_MAX_LEN + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  return cfgBuf;
+}
+
+class CfgCb : public NimBLECharacteristicCallbacks {
+  void onRead(NimBLECharacteristic* c, NimBLEConnInfo& info) override {
+    if (!cfgBuffer()) return;
+    char* buf = cfgBuf;
+    const size_t size = CFG_MAX_LEN;
+    uint8_t st = status;
+    int n = snprintf(buf, size, "v=%d\ncard=%d\nsensor=%d\nlevel=%d\nleveling=%d\n", CFG_PROTO_VER,
+                     st & 1, (st >> 1) & 1, (st >> 2) & 1, (st >> 3) & 1);
+    n += settings::formatCompact(buf + n, size - n);
+    c->setValue((const uint8_t*)buf, n);   // long reads: called once, the rest is read from this copy
+  }
+  void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& info) override {
+    if (!cfgBuffer()) return;
+    NimBLEAttValue v = c->getValue();
+    size_t n = v.size() < CFG_MAX_LEN ? v.size() : CFG_MAX_LEN;
+    memcpy(cfgBuf, v.data(), n);
+    cfgBuf[n] = 0;
+    bool ok = settings::update(cfgBuf);
+    Serial.printf("[ble] settings from the app%s\n", ok ? "" : ": nothing known in it");
+  }
+};
+
+class CtrlCb : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& info) override {
+    NimBLEAttValue v = c->getValue();
+    if (v.size() == 1 && v[0] >= CMD_SET_LEVEL && v[0] <= CMD_RESET_TRIP) command = v[0];
+  }
+};
+
+uint8_t takeCommand() { return __atomic_exchange_n(&command, (uint8_t)CMD_NONE, __ATOMIC_ACQ_REL); }
+
+void setStatus(bool card, bool sensor, bool levelSet, bool leveling) {
+  status = (card ? 1 : 0) | (sensor ? 2 : 0) | (levelSet ? 4 : 0) | (leveling ? 8 : 0);
+}
+
 // Remote IMU (shared/imu_link.h): batches of raw samples, ~25 writes/s.
 class ImuCb : public NimBLECharacteristicCallbacks {
   void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& info) override {
@@ -79,6 +126,9 @@ bool begin() {
   NimBLECharacteristic* ch = svc->createCharacteristic(
       NAV_CHAR_UUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
   ch->setCallbacks(new NavCb());
+  svc->createCharacteristic(CFG_CHAR_UUID, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE, CFG_MAX_LEN)
+      ->setCallbacks(new CfgCb());
+  svc->createCharacteristic(CTRL_CHAR_UUID, NIMBLE_PROPERTY::WRITE, 1)->setCallbacks(new CtrlCb());
 
   NimBLEService* imuSvc = srv->createService(IMU_SERVICE_UUID);
   NimBLECharacteristic* imuCh = imuSvc->createCharacteristic(
