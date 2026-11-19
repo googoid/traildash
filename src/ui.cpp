@@ -2,6 +2,7 @@
 #include "gfx.h"
 #include "config.h"
 #include "settings.h"
+#include "logo.h"
 #include <string.h>
 #include <initializer_list>
 #include <stdio.h>
@@ -747,13 +748,34 @@ static void overlays(const UiState& s) {
   }
 }
 
+// Boot badge (toyota-logo.png): rings and stripes as vectors, lettering from the
+// generated mask (tools/gen_logo.swift). Geometry measured from the image, in image
+// pixels relative to the badge centre, drawn 1:1.
 static void renderSplash(const UiState& s) {
-  Xf xf = pivotXf(CX, 200, 0, 0.9f, 0, -50);
-  drawRearTruck(xf, 0.9f, 0, ACCENT);
-  gfx.text(font_small, s.splash1, CX, 300, ACCENT, 0);
-  if (s.splash2) gfx.text(font_tiny, s.splash2, CX, 326, DIM, 0);
-  gfx.arc(CX, CY, 222, 228, 0, 360, Paint(0x1A2430));
-  if (s.splashProgress > 0) gfx.arc(CX, CY, 222, 228, 0, 360 * clampf(s.splashProgress, 0, 1), Paint(ACCENT));
+  constexpr uint32_t STRIPE[3] = {0xEA030B, 0xFE7F18, 0xF4EF17};   // red / orange / yellow
+  constexpr float BAR_X[3][2] = {{-89.5f, -37.5f}, {-27.5f, 23.5f}, {33.5f, 85.5f}};
+  constexpr float R_OUT = 207.5f, RING0 = 185.5f, RING1 = 194.5f, R_BAR = 179.f;
+  constexpr float GAP_TOP = -52.5f, GAP_BOT = 49.5f;   // text band between the stripes
+
+  gfx.circle(CX, CY, R_OUT, Paint(0x000000));
+  gfx.ring(CX, CY, RING0, RING1, Paint(0xFFFFFF));
+  // each bar is clipped by the inner circle: arc edge at the far end, straight edge at the text band
+  constexpr int SEG = 10;
+  float pts[2 * (SEG + 3)];
+  for (int i = 0; i < 3; i++) {
+    for (int half = 0; half < 2; half++) {
+      const float sgn = half ? 1.f : -1.f, yGap = half ? GAP_BOT : GAP_TOP;
+      int n = 0;
+      for (int k = 0; k <= SEG; k++) {
+        const float x = BAR_X[i][0] + (BAR_X[i][1] - BAR_X[i][0]) * k / SEG;
+        pts[2 * n] = CX + x; pts[2 * n + 1] = CY + sgn * sqrtf(R_BAR * R_BAR - x * x); n++;
+      }
+      pts[2 * n] = CX + BAR_X[i][1]; pts[2 * n + 1] = CY + yGap; n++;
+      pts[2 * n] = CX + BAR_X[i][0]; pts[2 * n + 1] = CY + yGap; n++;
+      gfx.poly(pts, n, Paint(STRIPE[i]));
+    }
+  }
+  gfx.text(font_logo, LOGO_TEXT, CX + LOGO_TEXT_X0, CY, 0xFFFFFF, -1);
 }
 
 const uint16_t* background(const UiState& s) {

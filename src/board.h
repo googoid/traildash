@@ -32,6 +32,8 @@ void displayPause();
 bool displayResume();
 
 void setBacklight(uint8_t percent);
+// Blocking smooth fade between two backlight levels (percent), perceptually even.
+void fadeBacklight(uint8_t fromPercent, uint8_t toPercent, uint32_t ms);
 void buzzer(bool on);
 float batteryVolts();
 

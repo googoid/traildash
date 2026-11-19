@@ -90,6 +90,21 @@ void setBacklight(uint8_t percent) {
   ledcWrite(PIN_BACKLIGHT, (uint32_t)percent * 1023 / 100);
 }
 
+void fadeBacklight(uint8_t fromPercent, uint8_t toPercent, uint32_t ms) {
+  setBacklight(fromPercent);   // attaches the PWM channel if needed
+  // interpolate in sqrt(duty) space (≈ perceived brightness), smoothstep easing
+  const float a = sqrtf(fromPercent > 100 ? 1.f : fromPercent / 100.f);
+  const float b = sqrtf(toPercent > 100 ? 1.f : toPercent / 100.f);
+  const uint32_t t0 = millis();
+  for (uint32_t e; (e = millis() - t0) < ms; delay(5)) {
+    float t = (float)e / ms;
+    t = t * t * (3 - 2 * t);
+    const float v = a + (b - a) * t;
+    ledcWrite(PIN_BACKLIGHT, (uint32_t)(v * v * 1023.f + 0.5f));
+  }
+  setBacklight(toPercent);
+}
+
 // ============================================================== ST7701 (3-wire SPI init)
 static spi_device_handle_t spi;
 

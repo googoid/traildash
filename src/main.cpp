@@ -363,7 +363,7 @@ static void saveLevel() {
 }
 
 static void renderTask(void*) {
-  bool backlightOff = false;
+  bool backlightOff = true;    // setup() leaves it off after the boot badge
   UiState st;
   uint32_t last = micros();
   const uint32_t bootMs = millis();
@@ -424,7 +424,7 @@ static void renderTask(void*) {
     board::present();
     if (backlightOff) {   // back on once a complete frame is in the new buffers
       board::waitFrame();
-      board::setBacklight(cfg.backlight);
+      board::fadeBacklight(0, cfg.backlight, 400);
       backlightOff = false;
     }
 
@@ -554,9 +554,9 @@ static void storageTask(void*) {
 // ------------------------------------------------------------------ setup
 static void* psAlloc(size_t n) { return heap_caps_aligned_alloc(64, n, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); }
 
-static void showSplash(const char* l1, const char* l2, float p) {
+static void showSplash(const char* l1, const char* l2) {
   UiState st;
-  st.splash1 = l1; st.splash2 = l2; st.splashProgress = p;
+  st.splash1 = l1; st.splash2 = l2;
   ui::prepare(st);
   board::drawFrame(ui::background(st), stripCb, nullptr, &st);
   board::present();
@@ -586,13 +586,18 @@ void setup() {
   loadFromSd();
   if (!ui::begin(psAlloc, board::flushCache)) Serial.println("[boot] UI buffer alloc FAILED (PSRAM?)");
 
-  showSplash("INCLINOMETER", "starting...", 0.05f);
-  board::setBacklight(cfg.backlight);
+  const uint32_t splashT0 = millis();
+  // boot badge: fade in, hold (~2 s on screen in total), fade out; the render
+  // task fades the first real frame in (backlight starts "off" there)
+  constexpr uint32_t SPLASH_MS = 2000, FADE_IN_MS = 600, FADE_OUT_MS = 500;
+  showSplash("INCLINOMETER", "starting...");
+  board::waitFrame();
+  board::fadeBacklight(0, cfg.backlight, FADE_IN_MS);
 
   touch::begin();
 
-  showSplash("INCLINOMETER", "ready", 1.0f);
-  delay(300);
+  while (millis() - splashT0 < SPLASH_MS - FADE_OUT_MS) delay(10);
+  board::fadeBacklight(cfg.backlight, 0, FADE_OUT_MS);
 
   if (!sh.levelSet) showToast("HOLD 2 s TO SET LEVEL");
   else if (!storage::mounted()) showToast("NO SD CARD");

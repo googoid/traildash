@@ -42,7 +42,6 @@ struct UiState {
   // boot splash (when splash1 != nullptr)
   const char* splash1 = nullptr;
   const char* splash2 = nullptr;
-  float splashProgress = 0;
 };
 
 namespace ui {
