@@ -3,6 +3,13 @@ Enclosure for the Waveshare ESP32-S3-Touch-LCD-2.8C (round 2.8", 95.86 mm glass)
 
 One-piece shell: the display drops in face-up, the glass sits in a pocket on a
 ledge, and 4x M2x6 screws from the back go into the board's own M2 standoffs.
+
+Screw holes: Waveshare's STEP model has the board ~2 mm too high in the glass
+(the first print's holes missed). STANDOFFS were measured on a photo of the
+real board, back up on a 10 mm cutting mat (15.4 px/mm, grid uniform to <1 %,
+so no perspective error), relative to the glass edge (fitted circle 95.9 mm).
+The other board features below are STEP values; they are moved by BOARD_SHIFT,
+the mean offset of the measured holes from the STEP's.
 The back has a captive 1/4"-20 nut (standard camera thread) for car mounts.
 
 Coordinates (same as the Waveshare STEP after centring):
@@ -20,7 +27,9 @@ GLASS_R      = 95.86 / 2
 GLASS_T      = 1.26          # cover glass + touch, front at d=0
 LCD_R, LCD_CY = 36.54, 1.77  # round LCD body behind the glass
 STANDOFF_TOP = 9.71          # back face of the board's M2 standoffs
-STANDOFFS    = [(-29.5, 15.14), (29.5, 15.14), (-18.0, -25.56), (18.0, -25.56)]
+STANDOFFS    = [(-29.0, 12.95), (29.9, 12.95), (-17.6, -27.7), (18.5, -27.7)]  # measured
+BOARD_SHIFT  = (0.45, -2.15)  # real board vs. STEP (STEP standoffs: (+-29.5, 15.14), (+-18, -25.56))
+SX, SY       = BOARD_SHIFT
 USB_MOUTH_D  = 6.88          # USB-C centre depth
 USB_MOUTH    = [(-26.33, -23.68, -1), (26.35, -23.71, +1)]  # mouth x, y, side
 BTN_D        = 6.41
@@ -34,7 +43,7 @@ LIP          = 0.5           # rim stands this far proud of the glass
 CAV_R        = 39.5          # open cavity behind glass (clears LCD + parts)
 BACK_SKIN    = 3.0           # thickness of the back plate
 CAV_BACK     = 13.6          # inner face of the back plate (depth)
-SCREW_D, SCREW_HEAD_D, SCREW_HEAD_H = 2.4, 4.4, 4.4
+SCREW_D, SCREW_HEAD_D, SCREW_HEAD_H = 2.6, 4.6, 4.4   # 2.6: +-0.3 mm for photo error
 NUT_AF, NUT_H, NUT_HOLE = 11.30, 5.80, 6.8   # 1/4"-20 hex nut (7/16" AF)
 NUT_FLOOR    = 2.0
 USB_W, USB_H = 13.5, 8.0     # plug overmold opening
@@ -55,8 +64,15 @@ def ring_body():
             .faces("<Z").edges().chamfer(0.6))   # front edge
 
 
-def cut_at(wp_solid, cutter):
-    return wp_solid.cut(cutter)
+def flex_notch(depth):
+    """Room for the LCD flex where it wraps around the bottom edge of the LCD,
+    behind the glass, kept inside the glass pocket radius."""
+    n = (cq.Workplane("XY").workplane(offset=GLASS_T)
+         .center(SX, -32.5 + SY).rect(2 * 27.5, 14).extrude(depth)
+         .union(cq.Workplane("XY").workplane(offset=GLASS_T)
+                .center(SX, -41.5 + SY).rect(2 * 16.0, 7).extrude(depth)))
+    return n.intersect(cq.Workplane("XY").workplane(offset=GLASS_T)
+                       .circle(POCKET_R - 0.6).extrude(depth))
 
 
 def build():
@@ -73,11 +89,8 @@ def build():
     # main cavity behind the glass
     cav = (cq.Workplane("XY").workplane(offset=GLASS_T)
            .circle(CAV_R).extrude(CAV_BACK - GLASS_T))
-    # notch for the LCD flex tail (wraps down to y=-43.6)
-    cav = cav.union(cq.Workplane("XY").workplane(offset=GLASS_T)
-                    .center(0, -36).rect(2 * 21.6, 7).extrude(CAV_BACK - GLASS_T))
-    cav = cav.union(cq.Workplane("XY").workplane(offset=GLASS_T)
-                    .center(0, -41.5).rect(2 * 16.0, 6).extrude(CAV_BACK - GLASS_T))
+    # notch for the LCD flex tail (wraps down to y=-43.6 in the STEP)
+    cav = cav.union(flex_notch(CAV_BACK - GLASS_T))
     body = body.cut(cav)
 
     # screw bosses from the back plate down to the standoffs
@@ -101,7 +114,8 @@ def build():
 
     # USB-C openings, 45 deg toward lower-left / lower-right
     for mx, my, side in USB_MOUTH:
-        ang = -135 if side < 0 else -45
+        mx, my = mx + SX, my + SY
+        ang = math.degrees(math.atan2(my, mx))
         r0 = math.hypot(mx, my) - 2
         length = OUT_R - r0 + 3
         c = (cq.Workplane("XY")
@@ -117,9 +131,9 @@ def build():
     # BOOT / RST paper-clip holes and battery-switch slot (left edge)
     for y in BTN_Y.values():
         body = body.cut(cq.Workplane("YZ").workplane(offset=-OUT_R - 2)
-                        .center(y, BTN_D).circle(PIN_D / 2).extrude(OUT_R - CAV_R + 4))
+                        .center(y + SY, BTN_D).circle(PIN_D / 2).extrude(OUT_R - CAV_R + 4))
     body = body.cut(cq.Workplane("YZ").workplane(offset=-OUT_R - 2)
-                    .center(sum(SW_Y) / 2, SW_D).slot2D(SW_Y[1] - SW_Y[0], 2.2)
+                    .center(sum(SW_Y) / 2 + SY, SW_D).slot2D(SW_Y[1] - SW_Y[0], 2.2)
                     .extrude(OUT_R - CAV_R + 4))
 
     # vent / buzzer slots in the back, lower-right
@@ -136,25 +150,33 @@ def build():
     return body
 
 
-def check_fit(body, step_path):
-    """Intersect the shell with every solid of the Waveshare model."""
+def load_board(step_path):
+    """Waveshare model centred on the glass, board parts moved by BOARD_SHIFT
+    (the glass stays put)."""
     CX, CY, Z0 = 18.0, 25.5642, -5.7105
-    board = cq.importers.importStep(step_path)
-    shell = body.val()
-    sb = shell.BoundingBox()
-    worst = 0.0
-    for s in board.solids().vals():
+    out = []
+    for s in cq.importers.importStep(step_path).solids().vals():
         s = s.translate(cq.Vector(-CX, -CY, -Z0))
         b = s.BoundingBox()
-        if b.xmax < sb.xmin or b.xmin > sb.xmax or b.ymax < sb.ymin or b.ymin > sb.ymax:
-            continue
+        if not (b.xlen > 90 and b.zmax < GLASS_T + 0.05):
+            s = s.translate(cq.Vector(SX, SY, 0))
+        out.append(s)
+    return out
+
+
+def check_fit(body, parts):
+    """Intersect the shell with every solid of the (shifted) Waveshare model."""
+    shell = body.val()
+    worst = 0.0
+    for s in parts:
         v = shell.intersect(s).Volume()
         if v > 1e-3:
+            b = s.BoundingBox()
             worst = max(worst, v)
             print(f"  COLLISION {v:.3f} mm3 with part at "
-                  f"({(b.xmin+b.xmax)/2:.1f},{(b.ymin+b.ymax)/2:.1f}) d{b.zmin:.2f}..{b.zmax:.2f}")
+                  f"({b.center.x:.1f},{b.center.y:.1f}) d{b.zmin:.2f}..{b.zmax:.2f}")
     print("fit check:", "OK, no collisions" if worst == 0 else "collisions found")
-    return board
+    return worst == 0
 
 
 if __name__ == "__main__":
@@ -162,7 +184,8 @@ if __name__ == "__main__":
     body = build()
     print(f"outer diameter {2*OUT_R:.1f} mm, depth {DEPTH:.1f} mm, volume {body.val().Volume()/1000:.1f} cm3")
     if len(sys.argv) > 1:
-        check_fit(body, sys.argv[1])
+        if not check_fit(body, load_board(sys.argv[1])):
+            raise SystemExit(1)
     # print orientation: back face down on the bed, front up
     printable = body.rotate((0, 0, 0), (1, 0, 0), 180).translate((0, 0, BACK))
     cq.exporters.export(printable, os.path.join(out, "enclosure.stl"), tolerance=0.02, angularTolerance=0.1)
