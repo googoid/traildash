@@ -689,6 +689,16 @@ static void renderTestPattern() {
   gfx.line(340, 300, 420, 380, 2.f, Paint(0xFFFFFF));
   gfx.text(font_med, "TEST", CX, 420, 0xFFFFFF, 0);
   gfx.text(font_tiny, "EVEN rows | ODD rows", CX, 62, 0xFFFFFF, 0);
+  // edge rulers: 1-px marks every 2 px from each screen edge; RED every 10 px, GREEN at the edge pixel itself
+  for (int k = 0; k <= 40; k += 2) {
+    uint32_t c = k == 0 ? 0x00FF00 : (k % 10 == 0 ? 0xFF0000 : 0xFFFFFF);
+    float len = (k % 10 == 0) ? 60 : 30;
+    gfx.rect(k, CY - len / 2, 1, len, Paint(c));            // left
+    gfx.rect(479 - k, CY - len / 2, 1, len, Paint(c));      // right
+    gfx.rect(CX - len / 2, k, len, 1, Paint(c));            // top
+    gfx.rect(CX - len / 2, 479 - k, len, 1, Paint(c));      // bottom
+  }
+  gfx.ring(CX, CY, 238, 240, Paint(0x00A0FF));               // full-size circle touching all 4 edges
 }
 
 // ------------------------------------------------------------------ overlays
