@@ -38,6 +38,7 @@ static uint16_t* bgEngineD = nullptr;
 
 // ------------------------------------------------------------------ helpers
 static inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
+static inline bool has(float v) { return v > -900; }   // OBD value available
 static inline float deg2rad(float d) { return d * (float)M_PI / 180.f; }
 
 static uint32_t sevColor(float v, float warn, float danger) {
@@ -252,19 +253,74 @@ static void buildPlain() {
   drawBgBase();
 }
 
-// speed screen layout
-static constexpr float SP_HEAD_Y = 118, SP_STATUS_Y = 148, SP_NUM_Y = 292, SP_UNIT_Y = 324;
-static constexpr float SP_CELL_L = 190, SP_CELL_R = 290, SP_LABEL_Y = 364, SP_VALUE_Y = 394;
+// speed screen: car-cluster style rev gauge (0 at the bottom, clockwise over the left to the
+// upper right), heading box and digital speed in a dark panel on the lower right.
+// greys are multiples of 8 so RGB565 keeps them neutral
+static constexpr uint32_t SC_BEZEL = 0x202020, SC_FACE = 0x181818, SC_TRACK = 0x282828;
+static constexpr uint32_t SC_REDZONE = 0x682C38, SC_PANEL = 0x101010, SC_HUB = 0x080808;
+static constexpr uint32_t SC_HUBBAND = 0x202020, SC_HUBRING = 0x383838, SC_NEEDLE = 0xD8D8D8;
+static constexpr uint32_t SC_LAMP = 0xB5E07A;
+static constexpr float SC_A0 = 180, SC_SWEEP = 225;              // gauge angles (0 = 12 o'clock)
+static constexpr float SC_FACE_R = 233, SC_PANEL_R = 224;
+static constexpr float SC_TRACK_R0 = 192, SC_TRACK_R1 = 228, SC_NUM_R = 172;
+static constexpr float SC_PANEL_TOP = 174, SC_SPLIT_Y = 237, SC_SPLIT_H = 6;
+static constexpr float SC_VX = 254, SC_VY = 300;                  // panel's left corner (points at the hub)
+static constexpr float SC_TLX = 322, SC_BLX = 322, SC_BLY = 455;  // panel top-left x, bottom-left corner
+static constexpr float SC_SPEED_X = 428, SC_SPEED_Y = 314, SC_UNIT_Y = 362, SC_INFO_Y = 388;
+static float scDeg(float rpm) { return SC_A0 + SC_SWEEP * clampf(rpm / ENGINE_GAUGE_RPM, 0, 1); }
+
+// x where the panel's right edge (the circle r = SC_PANEL_R) is at height y
+static float scRight(float y) { float d = y - CY; return CX + sqrtf(fmaxf(0, SC_PANEL_R * SC_PANEL_R - d * d)); }
+// x of the panel's left (chevron) edge at height y
+static float scLeft(float y) {
+  if (y <= SC_VY) return SC_TLX + (SC_VX - SC_TLX) * (y - SC_PANEL_TOP) / (SC_VY - SC_PANEL_TOP);
+  return SC_VX + (SC_BLX - SC_VX) * (y - SC_VY) / (SC_BLY - SC_VY);
+}
 
 static void buildSpeed() {
   gfx.setTarget(bgSpeed);
-  drawBgBase();
-  gfx.ring(CX, CY, 222.5f, 223.5f, Paint(0x1C2733));   // compass track
-  gfx.text(font_small, "km/h", CX, SP_UNIT_Y, DIM, 0);
-  gfx.line(150, 340, 330, 340, 1.2f, Paint(FAINT));
-  gfx.line(CX, 350, CX, 400, 1.2f, Paint(FAINT));
-  gfx.text(font_tiny, "MAX  km/h", SP_CELL_L, SP_LABEL_Y, DIM, 0);
-  gfx.text(font_tiny, "TRIP  km", SP_CELL_R, SP_LABEL_Y, DIM, 0);
+  Path& p = gfx.path_;
+  p.clear(); p.rect(0, 0, 480, 480);
+  gfx.fill(p, Paint(SC_BEZEL));
+  gfx.circle(CX, CY, SC_FACE_R, Paint(SC_FACE));
+
+  // track with the red zone, ticks every 1000 rpm (500 in between), slanted numbers
+  gfx.arc(CX, CY, SC_TRACK_R0, SC_TRACK_R1, SC_A0 - 9, SC_A0 + SC_SWEEP + 7, Paint(SC_TRACK));
+  gfx.arc(CX, CY, SC_TRACK_R0, SC_TRACK_R1, scDeg(cfg.redlineRpm), SC_A0 + SC_SWEEP + 7, Paint(SC_REDZONE));
+  for (int r = 0; r <= ENGINE_GAUGE_RPM; r += 500) {
+    const bool major = r % 1000 == 0;
+    if (major) radialLine(SC_TRACK_R0 + 10, SC_TRACK_R1 - 4, scDeg(r), 6.f, Paint(0xFFFFFF));
+    else radialLine(SC_TRACK_R0 + 20, SC_TRACK_R1 - 4, scDeg(r), 3.f, Paint(0x8C8C8C));
+    if (major) {
+      float x, y; polar(SC_NUM_R, scDeg(r), x, y);
+      char b[4]; snprintf(b, sizeof b, "%d", r / 1000);
+      gfx.text(font_dial, b, x, y + 14, 0xFFFFFF, 0);
+    }
+  }
+
+  // hub surround: grey band + lighter rim, open towards the panel
+  gfx.arc(CX, CY, 58, 110, 190, 405, Paint(SC_HUBBAND));
+  gfx.arc(CX, CY, 101, 110, 190, 405, Paint(SC_HUBRING));
+
+  // dark panel: chevron on the left, clipped by a circle on the right
+  {
+    float a0 = asinf((CY - SC_PANEL_TOP) / SC_PANEL_R);   // angle above the horizontal (rad)
+    float a1 = asinf((SC_BLY - CY) / SC_PANEL_R);         // below
+    p.clear();
+    p.moveTo(SC_TLX, SC_PANEL_TOP);
+    for (int i = 0; i <= 48; i++) {
+      float a = -a0 + (a0 + a1) * i / 48.f;
+      p.lineTo(CX + SC_PANEL_R * cosf(a), CY + SC_PANEL_R * sinf(a));
+    }
+    p.lineTo(SC_BLX, SC_BLY);
+    p.lineTo(SC_VX, SC_VY);
+    p.close();
+    gfx.fill(p, Paint(SC_PANEL));
+    const float x0 = scLeft(SC_SPLIT_Y + SC_SPLIT_H) - 1, x1 = scRight(SC_SPLIT_Y) + 1;
+    gfx.rect(x0, SC_SPLIT_Y, x1 - x0, SC_SPLIT_H, Paint(SC_FACE));
+  }
+  gfx.circle(CX, CY, 58, Paint(SC_HUB));
+  gfx.text(font_unit, "KM/H", SC_SPEED_X - 12, SC_UNIT_Y, 0xFFFFFF, 1);
 }
 
 // engine screen layout: rev gauge from 0 (lower left) over the top to full scale (lower right)
@@ -452,71 +508,47 @@ static const char* compassName(float deg) {
 }
 
 static void renderSpeed(const UiState& s) {
-  const bool hasCourse = s.courseDeg >= 0;
-  const float head = hasCourse ? s.courseDeg : 0;
-  const float a = hasCourse ? 1.f : 0.35f;   // dim the ring when the heading is unknown
+  char b[40];
 
-  // ---- compass ring (bearing b is drawn at screen angle b - heading) ----
-  for (int b = 0; b < 360; b += 10) {
-    float d = b - head;
-    bool major = b % 30 == 0;
-    radialLine(major ? 205 : 211, 220, d, major ? 2.6f : 1.6f, Paint(major ? TICK : TICK2, a));
-  }
-  for (int k = 0; k < 8; k++) {
-    float d = k * 45 - head, x, y;
-    bool card = k % 2 == 0;
-    polar(card ? 186 : 188, d, x, y);
-    static const char* n[8] = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
-    if (card) gfx.text(font_small, n[k], x, y + 6, k == 0 ? RED : TXT, 0, a);
-    else gfx.text(font_tiny, n[k], x, y + 5, DIM, 0, a);
-  }
-  // fixed lubber line at 12 o'clock
-  {
-    float tri[6] = {CX, 26, CX - 8, 10, CX + 8, 10};
-    gfx.poly(tri, 3, Paint(ACCENT));
-    gfx.line(CX, 24, CX, 38, 2.4f, Paint(ACCENT));
-  }
-
-  // ---- heading + link status ----
-  char b[24];
-  if (hasCourse) {
-    snprintf(b, sizeof b, "%s  %03d°", compassName(head), (int)lroundf(head) % 360);
-    gfx.text(font_med, b, CX, SP_HEAD_Y, TXT, 0);
-  } else {
-    gfx.text(font_med, "- -", CX, SP_HEAD_Y, DIM, 0);
-  }
+  // ---- heading box: link lamp (green = speed source live) + direction of travel ----
   const bool live = s.nav == NAV_LIVE || s.nav == NAV_OBD;
-  const char* st = s.nav == NAV_OBD ? "OBD" : s.nav == NAV_LIVE ? "GPS"
-                 : (s.nav == NAV_NO_FIX ? "WAITING FOR GPS" : "PHONE NOT CONNECTED");
-  char stb[48];
-  if (s.obdNote && s.nav != NAV_OBD) {   // adapter found but no speed from it yet
-    if (s.nav == NAV_LIVE) snprintf(stb, sizeof stb, "GPS  /  %s", s.obdNote);
-    else snprintf(stb, sizeof stb, "%s", s.obdNote);
-    st = stb;
+  {
+    const float x = 334, y0 = 191, y1 = 227;
+    float tri[6] = {x, y0, x - 18, y1, x + 18, y1};
+    gfx.poly(tri, 3, Paint(live && !s.obdNote ? SC_LAMP : live ? AMBER : 0x3A3A3A));
+    gfx.text(font_dir, s.courseDeg >= 0 ? compassName(s.courseDeg) : "--", 404, 227, 0xFFFFFF, 0);
   }
-  uint32_t sc = live && !s.obdNote ? GREEN : AMBER;
-  float tw = gfx.textWidth(font_tiny, st);
-  gfx.circle(CX - tw / 2 - 9, SP_STATUS_Y - 5, 3.5f, Paint(sc));
-  gfx.text(font_tiny, st, CX + 5, SP_STATUS_Y, live && !s.obdNote ? DIM : sc, 0);
 
   // ---- speed ----
   if (s.speedKmh >= 0) {
     snprintf(b, sizeof b, "%d", (int)lroundf(s.speedKmh));
-    gfx.text(font_giant, b, CX, SP_NUM_Y, TXT, 0);
+    gfx.text(font_speed, b, SC_SPEED_X, SC_SPEED_Y, 0xFFFFFF, 1);
   } else {
-    gfx.text(font_giant, "--", CX, SP_NUM_Y, FAINT, 0);
+    gfx.text(font_speed, "--", SC_SPEED_X, SC_SPEED_Y, 0x4A4A4A, 1);
   }
 
-  // ---- max / trip ----
-  snprintf(b, sizeof b, "%d", (int)lroundf(s.maxKmh));
-  gfx.text(font_med, b, SP_CELL_L, SP_VALUE_Y, s.maxKmh > 0 ? TXT : DIM, 0);
-  if (s.tripKm < 1000.f) snprintf(b, sizeof b, "%.1f", s.tripKm);
-  else snprintf(b, sizeof b, "%d", (int)s.tripKm);
-  gfx.text(font_med, b, SP_CELL_R, SP_VALUE_Y, s.tripKm > 0.05f ? TXT : DIM, 0);
+  // ---- trip / max, then the source (or why there is none), centred in the narrowing panel ----
+  auto mid = [](float y) { return (scLeft(y) + scRight(y - 5)) * 0.5f; };
+  if (s.tripKm < 1000.f) snprintf(b, sizeof b, "%.1f km   MAX %d", s.tripKm, (int)lroundf(s.maxKmh));
+  else snprintf(b, sizeof b, "%d km   MAX %d", (int)s.tripKm, (int)lroundf(s.maxKmh));
+  gfx.text(font_tiny, b, mid(SC_INFO_Y), SC_INFO_Y, 0x9A9A9A, 0);
+  const char* st = s.nav == NAV_OBD ? "OBD" : s.nav == NAV_LIVE ? "GPS"
+                 : s.nav == NAV_NO_FIX ? "NO GPS FIX" : "NO PHONE";
+  if (s.obdNote && s.nav != NAV_OBD) st = s.obdNote;   // adapter found but no speed from it yet
+  const float sy = SC_INFO_Y + 20;
+  gfx.text(font_tiny, st, mid(sy), sy, live && !s.obdNote ? 0x6A6A6A : AMBER, 0);
+
+  // ---- rev needle (rests on 0 without OBD) ----
+  {
+    const float rpm = has(s.rpm) ? s.rpm : 0;
+    Xf xf = Xf::rot(CX, CY, scDeg(rpm));
+    float outline[16] = {-14, 0, -11, -60, -7, -130, -3, -222, 3, -222, 7, -130, 11, -60, 14, 0};
+    gfx.poly(outline, 8, Paint(SC_NEEDLE), &xf);
+    gfx.circle(CX, CY, 20, Paint(SC_NEEDLE));
+  }
 }
 
 // Rev gauge, rpm, coolant, battery, fuel use.
-static bool has(float v) { return v > -900; }
 
 static void engineCell(float cx, float labelY, const char* label, const char* value, uint32_t c) {
   if (label) gfx.text(font_tiny, label, cx, labelY, DIM, 0);

@@ -13,6 +13,7 @@ struct FontSpec {
     let px: CGFloat       // em size in pixels
     let chars: String     // glyph set
     let tracking: Int     // extra advance in px
+    var slant: CGFloat = 0  // synthetic italic: degrees the glyphs lean right
 }
 
 let ascii = String((32...126).map { Character(UnicodeScalar($0)!) }) + "°"
@@ -25,6 +26,11 @@ let specs: [FontSpec] = [
     FontSpec(name: "font_med",   file: "Roboto-Medium.ttf",           px: 26, chars: ascii,   tracking: 0),
     FontSpec(name: "font_small", file: "Roboto-Bold.ttf",             px: 17, chars: ascii,   tracking: 1),
     FontSpec(name: "font_tiny",  file: "RobotoCondensed-Regular.ttf", px: 15, chars: ascii,   tracking: 0),
+    // speed / rev gauge screen (slanted like a car cluster)
+    FontSpec(name: "font_dial",  file: "RobotoCondensed-Bold.ttf",    px: 38, chars: "0123456789",      tracking: 0, slant: 12),
+    FontSpec(name: "font_dir",   file: "RobotoCondensed-Bold.ttf",    px: 52, chars: "NESW-",           tracking: 1, slant: 12),
+    FontSpec(name: "font_speed", file: "RobotoCondensed-Bold.ttf",    px: 84, chars: "0123456789-",     tracking: 0, slant: 12),
+    FontSpec(name: "font_unit",  file: "Roboto-Bold.ttf",             px: 28, chars: "KM/H",            tracking: 0),
 ]
 
 let scriptDir = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
@@ -42,7 +48,8 @@ for spec in specs {
         FileHandle.standardError.write("cannot load \(url.path)\n".data(using: .utf8)!)
         exit(1)
     }
-    let ctFont = CTFontCreateWithGraphicsFont(cgFont, spec.px, nil, nil)
+    var skew = CGAffineTransform(a: 1, b: 0, c: tan(spec.slant * .pi / 180), d: 1, tx: 0, ty: 0)
+    let ctFont = CTFontCreateWithGraphicsFont(cgFont, spec.px, &skew, nil)
     let ascent = Int(CTFontGetAscent(ctFont).rounded())
     let descent = Int(CTFontGetDescent(ctFont).rounded())
 
@@ -61,7 +68,7 @@ for spec in specs {
         var bbox = CGRect.zero
         CTFontGetBoundingRectsForGlyphs(ctFont, .horizontal, &glyph, &bbox, 1)
 
-        let pad = 2
+        let pad = 2 + Int((spec.px * tan(spec.slant * .pi / 180)).rounded(.up))
         let minX = Int(floor(bbox.minX)), minY = Int(floor(bbox.minY))
         let maxX = Int(ceil(bbox.maxX)), maxY = Int(ceil(bbox.maxY))
         let W = max(1, maxX - minX + 2 * pad)

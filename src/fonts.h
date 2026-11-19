@@ -25,3 +25,8 @@ extern const Font font_big;    // Roboto Condensed Bold 50px
 extern const Font font_med;    // Roboto Medium 26px
 extern const Font font_small;  // Roboto Bold 17px (tracked)
 extern const Font font_tiny;   // Roboto Condensed 15px
+// speed screen (slanted 12°)
+extern const Font font_dial;   // Roboto Condensed Bold 38px — digits only
+extern const Font font_dir;    // Roboto Condensed Bold 52px — "NESW-"
+extern const Font font_speed;  // Roboto Condensed Bold 84px — digits and "-"
+extern const Font font_unit;   // Roboto Bold 28px, upright — "KM/H" only

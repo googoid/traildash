@@ -49,6 +49,9 @@ Open `ios/InclinoLink.xcodeproj` in Xcode, pick your team under *Signing & Capab
   they reset at power-up). Distance is speed × time, so it isn't counted while there is no speed source.
 - With an OBD-II BLE adapter (ELM327, e.g. Vgate iOS-Vlink) in the car, speed comes from the car
   instead (status shows **OBD**); see `src/obd.cpp`.
+- The **speed screen** looks like a car cluster: a rev needle (OBD rpm; it rests on 0 without OBD,
+  red zone from `redline`), the direction of travel next to a lamp (green = speed source live, amber =
+  OBD adapter not delivering yet, grey = no speed), the speed, and trip / max / source below it.
 - The **engine screen** (OBD only) shows a rev gauge (red zone: `redline` in config.txt), coolant
   (blue = cold, amber from 105 °C, red from 110 °C), adapter voltage, fuel use now (L/100 km, or L/h
   when standing) and the average since the trip reset, plus intake temperature and engine load.

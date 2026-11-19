@@ -399,7 +399,10 @@ static void renderTask(void*) {
     st.maxKmh = sh.maxKmh;
     st.tripKm = sh.tripKm;
     st.obdState = sh.obdState;
-    st.rpm = sh.rpm; st.coolantC = sh.coolantC; st.volts = sh.volts;
+    // rpm arrives a few times a second: ease towards it so the rev needle sweeps
+    if (sh.rpm < -900 || st.rpm < -900) st.rpm = sh.rpm;
+    else st.rpm += (sh.rpm - st.rpm) * fminf(1.f, dt / 0.15f);
+    st.coolantC = sh.coolantC; st.volts = sh.volts;
     st.intakeC = sh.intakeC; st.loadPct = sh.loadPct;
     st.fuelLph = sh.fuelLph; st.fuelL100 = sh.fuelL100;
     st.avgL100 = sh.fuelKm >= 1.f ? sh.fuelL / sh.fuelKm * 100.f : -999;
