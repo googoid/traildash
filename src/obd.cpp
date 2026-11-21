@@ -210,6 +210,7 @@ static bool noAnswer(const char* r) {
          strstr(r, "BUS INIT") || strstr(r, "?");
 }
 
+static bool countOk = true;    // adapter takes a response count ("010D1": return after one reply)
 static uint8_t supported[8];   // bitmap of mode-01 PIDs 0x00..0x3F... (bit for PID p at [p/8])
 static bool isSupported(uint8_t pid) {
   if (pid == 0) return true;
@@ -264,8 +265,10 @@ static bool poll(uint8_t pid) {
   if (!isSupported(pid)) return true;
   char c[8], r[256];
   uint8_t b[2];
-  snprintf(c, sizeof c, "01%02X", pid);
+  const bool count = countOk && data.protocol >= 6 && data.protocol <= 9;   // CAN: one reply, no waiting
+  snprintf(c, sizeof c, count ? "01%02X1" : "01%02X", pid);
   if (!cmd(c, r, sizeof r)) return false;
+  if (count && strchr(r, '?')) { countOk = false; olog("[obd] adapter doesn't take response counts\n"); return true; }
   int n = (pid == 0x0C || pid == 0x10) ? 2 : 1;
   if (!parse01(r, pid, b, n)) return !noAnswer(r) && r[0];   // odd reply: ignore, don't count as dead
   switch (pid) {
@@ -285,6 +288,175 @@ static void pollVolts() {
   if (!cmd("ATRV", r, sizeof r)) return;
   float v = atof(r);
   if (v > 5 && v < 20) store(data.volts, data.voltsMs, v);
+}
+
+// ------------------------------------------------------------------ Toyota data blocks
+// A 2005 Toyota gives the gear only through its own mode-21 "data blocks" (21 xx) of the engine
+// ECU, which also runs the gearbox: block 21DA byte A = current gear (1..5, found by probing).
+// When the ECU answers 21DA at connect, the header stays on 7E0 for everything (the mode-01 PIDs
+// come from the same ECU), so no header switching per request.
+//
+// The selector comes from blocks 21E6 and 21D3 (see toyotaStep). With cfg.obdProbe, these blocks
+// are logged to probe.txt whenever they change, with speed, rpm, throttle, gear and selector.
+static constexpr size_t PROBE_BUF = 16384;
+static char* probeBuf = nullptr;   // PSRAM; guarded by mux
+static size_t probeLen = 0;
+
+static void plog(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
+static void plog(const char* fmt, ...) {
+  char line[600];
+  va_list ap;
+  va_start(ap, fmt);
+  int n = vsnprintf(line, sizeof line, fmt, ap);
+  va_end(ap);
+  if (n <= 0) return;
+  if (n > (int)sizeof line - 1) n = sizeof line - 1;
+  char ts[16];
+  int t = snprintf(ts, sizeof ts, "%9.2f ", millis() * 1e-3f);
+  portENTER_CRITICAL(&mux);
+  if (probeBuf && probeLen + t + n < PROBE_BUF) {
+    memcpy(probeBuf + probeLen, ts, t);
+    memcpy(probeBuf + probeLen + t, line, n);
+    probeLen += t + n;
+  }
+  portEXIT_CRITICAL(&mux);
+}
+
+size_t takeProbe(char* out, size_t size) {
+  portENTER_CRITICAL(&mux);
+  size_t n = probeLen < size ? probeLen : size;
+  if (n) memcpy(out, probeBuf, n);
+  memmove(probeBuf, probeBuf + n, probeLen - n);
+  probeLen -= n;
+  portEXIT_CRITICAL(&mux);
+  return n;
+}
+
+static uint32_t fnv(const char* s) {
+  uint32_t h = 2166136261u;
+  for (; *s; s++) h = (h ^ (uint8_t)*s) * 16777619u;
+  return h;
+}
+
+static bool isHexStr(const char* s, size_t n) {
+  for (size_t i = 0; i < n; i++) if (hexv(s[i]) < 0) return false;
+  return true;
+}
+
+// Keep only our reply's lines: the ISO-TP length ("01E"), its frames ("0:61..", "1:..") or a
+// single frame "61xx..". Other lines are mode-01 answers to some other tester on the bus.
+// Result on one line, frames separated by spaces. Returns true if a complete reply is there.
+static bool cleanReply(char* r, uint8_t lid, bool* truncated) {
+  char out[512];
+  size_t k = 0;
+  char key[5];
+  snprintf(key, sizeof key, "61%02X", lid);
+  int expect = -1, got = 0;
+  bool single = false;
+  for (char* line = r; *line;) {
+    char* end = strchr(line, '\n');
+    size_t n = end ? (size_t)(end - line) : strlen(line);
+    bool keep = false;
+    if (n == 3 && isHexStr(line, 3) && expect < 0) {   // multi-frame length
+      expect = hexv(line[0]) * 256 + hexv(line[1]) * 16 + hexv(line[2]);
+      keep = true;
+    } else if (n >= 3 && expect >= 0 && hexv(line[0]) >= 0 && line[1] == ':') {
+      keep = true;
+      got += (int)(n - 2) / 2;
+    } else if (n >= 4 && !strncasecmp(line, key, 4)) {
+      keep = single = true;
+    }
+    if (keep && k + n + 2 < sizeof out) {
+      if (k) out[k++] = ' ';
+      memcpy(out + k, line, n);
+      k += n;
+    }
+    line += n;
+    if (*line == '\n') line++;
+  }
+  out[k] = 0;
+  strcpy(r, out);
+  bool multiOk = expect > 0 && got >= expect && strncasecmp(strchr(out, ':') ? strchr(out, ':') + 1 : "", key, 4) == 0;
+  if (truncated) *truncated = expect > 0 && got < expect;
+  return single || multiOk;
+}
+
+static bool toyota = false;    // engine ECU answers 21DA; header kept at 7E0
+
+// One data block. `single`: the reply fits one CAN frame, so the response count can be used
+// (this adapter cuts multi-frame replies short with it). false = no answer.
+static bool readBlock(uint8_t lid, char* r, size_t size, bool single) {
+  char c[8];
+  const bool count = single && countOk;
+  snprintf(c, sizeof c, count ? "21%02X1" : "21%02X", lid);
+  if (!cmd(c, r, size)) return false;
+  if (count && strchr(r, '?')) {   // adapter doesn't know response counts
+    countOk = false;
+    olog("[obd] adapter doesn't take response counts\n");
+    return readBlock(lid, r, size, single);
+  }
+  return cleanReply(r, lid, nullptr);
+}
+
+static bool setHeader(uint16_t ecu) {
+  char c[12], r[32];
+  snprintf(c, sizeof c, "ATSH%03X", ecu);
+  return cmd(c, r, sizeof r);
+}
+
+static inline uint8_t hexByte(const char* p) { return (uint8_t)(hexv(p[0]) * 16 + hexv(p[1])); }
+
+// 21DA byte A -> gear (1..5)
+static bool readGear(char* r, size_t size) {
+  if (!readBlock(0xDA, r, size, true)) return false;
+  uint8_t g = hexByte(r + 4);
+  portENTER_CRITICAL(&mux);
+  data.gear = g; data.gearMs = millis();
+  portEXIT_CRITICAL(&mux);
+  return true;
+}
+
+// Called once the car answers: does the engine ECU give 21DA on 7E0 (with mode 01 still working)?
+static void detectToyota() {
+  char r[128];
+  uint8_t b[1];
+  toyota = false;
+  if (data.protocol < 6 || data.protocol > 9 || !setHeader(0x7E0)) return;
+  for (int i = 0; i < 2 && !toyota; i++)   // twice: a stray frame from another tester may get in
+    toyota = readGear(r, sizeof r) && cmd("010D", r, sizeof r) && parse01(r, 0x0D, b, 1);
+  if (toyota) olog("[obd] Toyota gear (21DA) available\n");
+  else setHeader(0x7DF);
+}
+
+// Selector (found with P/R/N/D tests while parked):
+//   21E6 byte A bit 0x10 set  -> P or N (neutral start switch; P and N look the same)
+//   otherwise 21D3 byte C bit 0x80 set -> D, clear -> R
+static uint32_t hashDA = 0, hashE6 = 0, hashD3 = 0;
+
+static void logBlock(uint8_t lid, uint32_t& hash, const char* r) {
+  if (!cfg.obdProbe) return;
+  uint32_t h = fnv(r);
+  if (h == hash) return;
+  hash = h;
+  Data d = latest();
+  plog("21%02X  %3.0f km/h %4.0f rpm %3.0f%% thr gear %u%c | %s\n", lid, d.speedKmh, d.rpm, d.throttlePct,
+       d.gear, d.selector ? d.selector : '?', r);
+}
+
+static void toyotaStep() {
+  static char r[512];
+  if (readGear(r, sizeof r)) logBlock(0xDA, hashDA, r);
+  if (!readBlock(0xE6, r, sizeof r, true)) return;
+  logBlock(0xE6, hashE6, r);
+  char sel = 'N';
+  if (!(hexByte(r + 4) & 0x10)) {
+    if (!readBlock(0xD3, r, sizeof r, true)) return;
+    logBlock(0xD3, hashD3, r);
+    sel = hexByte(r + 8) & 0x80 ? 'D' : 'R';
+  }
+  portENTER_CRITICAL(&mux);
+  data.selector = sel; data.selectorMs = millis();
+  portEXIT_CRITICAL(&mux);
 }
 
 static void logStatus() {
@@ -328,6 +500,8 @@ static void session() {
       fails = 0;
       attempts = 0;
       setState(OBD_LIVE);
+      detectToyota();
+      if (cfg.obdProbe) plog("[probe] car answering, protocol %u%s\n", data.protocol, toyota ? ", gear from 21DA" : "");
     }
 
     // speed, rpm, airflow every round, one slow value each round, voltage now and then
@@ -336,6 +510,7 @@ static void session() {
     ok = poll(0x10) && ok;
     ok = poll(slowPids[slow % sizeof slowPids]) && ok;
     if (++slow % 8 == 0) pollVolts();
+    if (toyota && ok) toyotaStep();
 
     fails = ok ? 0 : fails + 1;
     if (fails >= 5) {   // car stopped answering (engine off?) -> search again
@@ -383,6 +558,7 @@ static void task(void*) {
 // display pauses for a flash write (no SD card) it is simply not scheduled.
 void begin() {
   logBuf = (char*)heap_caps_malloc(LOG_BUF, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (cfg.obdProbe) probeBuf = (char*)heap_caps_malloc(PROBE_BUF, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   xTaskCreatePinnedToCoreWithCaps(task, "obd", 6144, nullptr, 2, nullptr, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }
 

@@ -70,10 +70,10 @@ Open `ios/InclinoLink.xcodeproj` in Xcode, pick your team under *Signing & Capab
 
 *InclinoLink → Device Settings* (while the inclinometer is connected) changes the `config.txt`
 settings live: warning/danger angles, alarm sound, brightness (the screen follows the slider), rev
-gauge red zone, drive log on/off + interval, remote IMU forward axis and OBD adapter name.
+gauge red zone, drive log on/off + interval, remote IMU forward axis, OBD adapter name and probe.
 Changes apply at once and are written to `config.txt` a second after the last one (without an SD
 card they last until power-off). It also has **Set level**, **Reset peaks** and **Reset trip**.
-A new forward axis needs *Set level* again.
+Only the OBD probe needs a restart; a new forward axis needs *Set level* again.
 Debug builds started with the launch argument `-demoDevice` show the screen with a pretend device.
 
 Protocol (service/characteristic UUIDs, 10-byte packet, settings text, action bytes) is documented in `src/ble.h`.
@@ -107,10 +107,11 @@ computer and restart. The card also stores:
 
 | File | Content |
 |---|---|
-| `/incl/config.txt` | warning/danger angles, buzzer, backlight, drive log on/off + interval, OBD adapter name, remote IMU forward axis, rev gauge red zone |
+| `/incl/config.txt` | warning/danger angles, buzzer, backlight, drive log on/off + interval, OBD adapter name, remote IMU forward axis, rev gauge red zone, OBD probe on/off |
 | `/incl/rlevel_a.txt`, `rlevel_b.txt` | level reference (of the remote IMU) |
 | `/incl/state_a.txt`, `state_b.txt` | peak angles, max speed, trip, fuel used for the average, drive log counter |
 | `/incl/logs/NNNNN.csv` | drive log, one file per power-up: angles, speed + source, heading, OBD values |
+| `/incl/probe.txt` | OBD probe (`obd_probe = 1`, Toyota only): the gear / selector data blocks (21DA, 21E6, 21D3), each reply logged when it changes, with speed / rpm / throttle / gear / selector |
 
 Records are written alternately to the `_a`/`_b` file with a sequence number and checksum, so a power
 cut during a write keeps the previous version. The drive log reaches the card every 10 s.
@@ -118,6 +119,7 @@ Without a card the level reference falls back to internal flash (screen blinks w
 nothing else is kept. A level reference already in flash is copied to a new card automatically.
 
 Without a card reader, over USB serial: `s` lists the files, `o` prints the end of `obd.txt`,
+`b` the end of `probe.txt` (`b500` = its last 500 KB),
 `c21` prints drive log 21, `v` prints the current screen, trip, fuel and comparison totals.
 
 ## How it works

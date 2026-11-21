@@ -5,6 +5,7 @@
 //  /incl/state_a|b.txt       peaks, max speed, trip, log counter
 //  /incl/logs/NNNNN.csv      drive log, one file per power-up
 //  /incl/obd.txt             OBD adapter diagnostics (connection, protocol, supported PIDs)
+//  /incl/probe.txt           raw Toyota mode-21 replies while probing (config.txt: obd_probe)
 //
 // Unlike the internal flash, the SD card can be written while the display runs.
 // Records are written alternately to two files with a sequence number and a
@@ -41,8 +42,8 @@ void logClose();
 // Rewrite config.txt from cfg (settings changed in the phone app).
 bool saveConfig();
 
-// Append text to /incl/<name> (rotated to <name>.old above 512 KB).
-bool appendText(const char* name, const char* text, size_t len);
+// Append text to /incl/<name> (rotated to <name>.old above maxBytes).
+bool appendText(const char* name, const char* text, size_t len, size_t maxBytes = 512 * 1024);
 
 // Serial access (laptop, no card reader): list the files, print the last `tail` bytes of one.
 void listFiles();

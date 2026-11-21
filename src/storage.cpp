@@ -186,12 +186,12 @@ void logClose() {
   logF = nullptr;
 }
 
-bool appendText(const char* name, const char* text, size_t len) {
+bool appendText(const char* name, const char* text, size_t len, size_t maxBytes) {
   if (!ok) return false;
   char path[48], old[56];
   snprintf(path, sizeof path, SDDIR "/%s", name);
   struct stat st;
-  if (stat(path, &st) == 0 && st.st_size > 512 * 1024) {
+  if (stat(path, &st) == 0 && (size_t)st.st_size > maxBytes) {
     snprintf(old, sizeof old, "%s.old", path);
     remove(old);
     rename(path, old);

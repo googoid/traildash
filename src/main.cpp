@@ -322,6 +322,10 @@ static void sensorTask(void*) {
                       sh.screen, sh.tripKm, sh.maxKmh, sh.fuelL, sh.fuelKm, sh.cmpGpsKm);
       else if (c == 's') storage::listFiles();
       else if (c == 'o') storage::printFile("obd.txt", 32 * 1024);
+      else if (c == 'b') {   // "b" = end of the probe log, "b<KB>" = that many KB from its end
+        long kb = Serial.parseInt();
+        storage::printFile("probe.txt", (kb > 0 ? kb : 32) * 1024);
+      }
       else if (c == 'g') {   // newest drive log (the current one is still being written)
         char name[24];
         uint32_t no = saved.logNo;
@@ -517,6 +521,7 @@ static void storageTask(void*) {
     char b[48];
     int n = snprintf(b, sizeof b, "\n=== power-up, drive log %05lu ===\n", (unsigned long)saved.logNo);
     storage::appendText("obd.txt", b, n);
+    if (cfg.obdProbe) storage::appendText("probe.txt", b, n, 32u << 20);
   }
   uint32_t lastSave = millis(), lastLog = 0, lastSync = millis(), lastObd = 0;
   uint32_t cfgRev = settings::revision(), cfgChangedAt = 0;
@@ -583,6 +588,8 @@ static void storageTask(void*) {
       static char* ob = (char*)heap_caps_malloc(4096, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
       size_t n = ob ? obd::takeLog(ob, 4096) : 0;
       if (n) storage::appendText("obd.txt", ob, n);
+      n = ob ? obd::takeProbe(ob, 4096) : 0;
+      if (n) storage::appendText("probe.txt", ob, n, 32u << 20);
     }
   }
 }

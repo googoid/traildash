@@ -27,6 +27,8 @@ struct Data {
   float throttlePct = 0; uint32_t throttleMs = 0;
   float volts = 0;      uint32_t voltsMs = 0;
   float mafGs = 0;      uint32_t mafMs = 0;    // mass airflow, g/s (-> fuel use)
+  uint8_t gear = 0;     uint32_t gearMs = 0;   // Toyota 21DA byte A: current gear 1..5
+  char selector = 0;    uint32_t selectorMs = 0;   // 'N' (P or N), 'R', 'D'; 0 = unknown
   uint8_t protocol = 0; // ELM327 protocol number (ATDPN): 6..9 = CAN, 3..5 = K-line
 };
 
@@ -37,5 +39,7 @@ Data latest();
 bool fresh(uint32_t ms, uint32_t maxAgeMs = 3000);
 // Take up to `size` bytes of pending diagnostics text (connection, protocol, supported PIDs).
 size_t takeLog(char* out, size_t size);
+// Same for the probe log (raw maker-specific replies, see cfg.obdProbe).
+size_t takeProbe(char* out, size_t size);
 
 }  // namespace obd

@@ -33,6 +33,8 @@
 #define OBD_CMD_TIMEOUT_MS   1500    // one PID request (K-line can take ~300 ms)
 #define OBD_SEARCH_TIMEOUT_MS 15000  // first request: the adapter tries every protocol
 #define OBD_RESCAN_MS        3000    // pause between scans when no adapter was found
+// Probe: log the Toyota gear / selector data blocks to /incl/probe.txt when they change
+#define OBD_PROBE            1       // config.txt: obd_probe
 
 // Speed comparison screen: car (OBD) vs GPS
 #define CMP_MIN_KMH          20.f    // average only above this (GPS speed is noisy when slow)
