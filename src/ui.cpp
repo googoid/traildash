@@ -502,22 +502,21 @@ static void renderPeaks(const UiState& s) {
            s.levelSet ? 0x4E5D6B : AMBER, 0);
 }
 
-// Heading-up compass ring, big speed, max + trip.
-static const char* compassName(float deg) {
-  static const char* n[8] = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
-  return n[(int)floorf(fmodf(deg + 22.5f + 360.f, 360.f) / 45.f) % 8];
-}
-
+// Car-cluster speed screen: rev needle, gear, digital speed, trip / max.
 static void renderSpeed(const UiState& s) {
   char b[40];
 
-  // ---- heading box: link lamp (green = speed source live) + direction of travel ----
+  // ---- gear box: link lamp (green = speed source live) + current gear (OBD, Toyota) ----
   const bool live = s.nav == NAV_LIVE || s.nav == NAV_OBD;
   {
     const float x = 334, y0 = 191, y1 = 227;
     float tri[6] = {x, y0, x - 18, y1, x + 18, y1};
     gfx.poly(tri, 3, Paint(live && !s.obdNote ? SC_LAMP : live ? AMBER : 0x3A3A3A));
-    gfx.text(font_dir, s.courseDeg >= 0 ? compassName(s.courseDeg) : "--", 404, 227, 0xFFFFFF, 0);
+    // N (P or N: the car doesn't tell them apart), R, or the gear while in D
+    char g[2] = {'-', 0};
+    if (s.selector == 'N' || s.selector == 'R') g[0] = s.selector;
+    else if (s.gear >= 1 && s.gear <= 9) g[0] = (char)('0' + s.gear);
+    gfx.text(font_gear, g, 404, 227, g[0] != '-' ? 0xFFFFFF : 0x4A4A4A, 0);
   }
 
   // ---- speed ----

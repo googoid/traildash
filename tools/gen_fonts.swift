@@ -28,7 +28,7 @@ let specs: [FontSpec] = [
     FontSpec(name: "font_tiny",  file: "RobotoCondensed-Regular.ttf", px: 15, chars: ascii,   tracking: 0),
     // speed / rev gauge screen (slanted like a car cluster)
     FontSpec(name: "font_dial",  file: "RobotoCondensed-Bold.ttf",    px: 38, chars: "0123456789",      tracking: 0, slant: 12),
-    FontSpec(name: "font_dir",   file: "RobotoCondensed-Bold.ttf",    px: 52, chars: "NESW-",           tracking: 1, slant: 12),
+    FontSpec(name: "font_gear",  file: "RobotoCondensed-Bold.ttf",    px: 52, chars: "0123456789-PRNDS", tracking: 1, slant: 12),
     FontSpec(name: "font_speed", file: "RobotoCondensed-Bold.ttf",    px: 84, chars: "0123456789-",     tracking: 0, slant: 12),
     FontSpec(name: "font_unit",  file: "Roboto-Bold.ttf",             px: 28, chars: "KM/H",            tracking: 0),
 ]

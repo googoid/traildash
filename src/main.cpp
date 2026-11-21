@@ -51,6 +51,8 @@ struct Shared {
   // engine (OBD); < -900 = not available
   volatile uint8_t obdState = 0;
   volatile float rpm = -999, coolantC = -999, volts = -999, intakeC = -999, loadPct = -999;
+  volatile uint8_t gear = 0;      // 0 = unknown
+  volatile char selector = 0;     // 'N' (P or N), 'R', 'D'; 0 = unknown
   volatile float fuelLph = -999, fuelL100 = -999;
   volatile float fuelL = 0, fuelKm = 0;   // since trip reset (average consumption)
   // speed comparison: both sources separately, distances while both were live and moving
@@ -256,6 +258,8 @@ static void sensorTask(void*) {
         auto val = [&](float v, uint32_t ms, uint32_t maxAge) { return live && obd::fresh(ms, maxAge) ? v : -999.f; };
         sh.obdState = od.state;
         sh.rpm = val(od.rpm, od.rpmMs, 3000);
+        sh.gear = live && obd::fresh(od.gearMs, 3000) && od.gear >= 1 && od.gear <= 9 ? od.gear : 0;
+        sh.selector = live && obd::fresh(od.selectorMs, 3000) ? od.selector : 0;
         sh.coolantC = val(od.coolantC, od.coolantMs, 10000);
         sh.intakeC = val(od.intakeC, od.intakeMs, 10000);
         sh.loadPct = val(od.loadPct, od.loadMs, 10000);
@@ -414,6 +418,8 @@ static void renderTask(void*) {
     st.tripKm = sh.tripKm;
     st.obdState = sh.obdState;
     // rpm arrives a few times a second: ease towards it so the rev needle sweeps
+    st.gear = sh.gear;
+    st.selector = sh.selector;
     if (sh.rpm < -900 || st.rpm < -900) st.rpm = sh.rpm;
     else st.rpm += (sh.rpm - st.rpm) * fminf(1.f, dt / 0.15f);
     st.coolantC = sh.coolantC; st.volts = sh.volts;
@@ -514,7 +520,7 @@ static void storageTask(void*) {
     if (!logNoFree) { saved.logNo++; storage::saveState(saved); }
     logNoFree = false;
     storage::logOpen(saved.logNo,
-                     "t_s,pitch,roll,speed_kmh,speed_src,course,rpm,coolant_c,intake_c,load_pct,throttle_pct,obd_volts,maf_gs,fuel_lph\n");
+                     "t_s,pitch,roll,speed_kmh,speed_src,course,rpm,coolant_c,intake_c,load_pct,throttle_pct,obd_volts,maf_gs,fuel_lph,gear,selector\n");
   };
   updateLog();
   {
@@ -563,7 +569,7 @@ static void storageTask(void*) {
       lastLog = now;
       obd::Data o = obd::latest();
       bool live = o.state == obd::OBD_LIVE;
-      char spd[8], crs[8], rpm[8], cool[8], intk[8], load[8], thr[8], volt[8], maf[8], fuel[8], line[180];
+      char spd[8], crs[8], rpm[8], cool[8], intk[8], load[8], thr[8], volt[8], maf[8], fuel[8], gear[4], line[196];
       fmtOpt(spd, sizeof spd, sh.speedKmh >= 0, "%.0f", sh.speedKmh);
       fmtOpt(crs, sizeof crs, sh.courseDeg >= 0, "%.0f", sh.courseDeg);
       fmtOpt(rpm, sizeof rpm, live && obd::fresh(o.rpmMs), "%.0f", o.rpm);
@@ -574,12 +580,14 @@ static void storageTask(void*) {
       fmtOpt(volt, sizeof volt, live && obd::fresh(o.voltsMs, 20000), "%.1f", o.volts);
       fmtOpt(maf, sizeof maf, live && obd::fresh(o.mafMs), "%.2f", o.mafGs);
       fmtOpt(fuel, sizeof fuel, sh.fuelLph > -900, "%.2f", sh.fuelLph);
+      fmtOpt(gear, sizeof gear, sh.gear > 0, "%.0f", sh.gear);
+      const char sel[2] = {sh.selector, 0};
       const char* src = sh.nav == NAV_OBD ? "obd" : sh.nav == NAV_LIVE ? "gps" : "";
       char pit[8], rol[8];   // empty while there is no sensor
       fmtOpt(pit, sizeof pit, sh.sensorOk, "%.1f", sh.pitch);
       fmtOpt(rol, sizeof rol, sh.sensorOk, "%.1f", sh.roll);
-      snprintf(line, sizeof line, "%.1f,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n", now * 1e-3f, pit, rol,
-               spd, src, crs, rpm, cool, intk, load, thr, volt, maf, fuel);
+      snprintf(line, sizeof line, "%.1f,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n", now * 1e-3f, pit, rol,
+               spd, src, crs, rpm, cool, intk, load, thr, volt, maf, fuel, gear, sel);
       storage::logWrite(line);
     }
     if (now - lastSync >= LOG_SYNC_S * 1000) { lastSync = now; storage::logSync(); }

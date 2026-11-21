@@ -50,8 +50,12 @@ Open `ios/InclinoLink.xcodeproj` in Xcode, pick your team under *Signing & Capab
 - With an OBD-II BLE adapter (ELM327, e.g. Vgate iOS-Vlink) in the car, speed comes from the car
   instead (status shows **OBD**); see `src/obd.cpp`.
 - The **speed screen** looks like a car cluster: a rev needle (OBD rpm; it rests on 0 without OBD,
-  red zone from `redline`), the direction of travel next to a lamp (green = speed source live, amber =
+  red zone from `redline`), the current gear next to a lamp (green = speed source live, amber =
   OBD adapter not delivering yet, grey = no speed), the speed, and trip / max / source below it.
+  The box shows **N** in P or N (the car doesn't tell them apart), **R** in reverse and the current
+  gear (1–5) in D. It comes from the engine ECU's Toyota data blocks, found by probing a 2005 4Runner:
+  `21DA` byte A = gear, `21E6` byte A bit 0x10 = P/N, `21D3` byte C bit 0x80 = D (clear = R).
+  On other cars it shows `-`.
 - The **engine screen** (OBD only) shows a rev gauge (red zone: `redline` in config.txt), coolant
   (blue = cold, amber from 105 °C, red from 110 °C), adapter voltage, fuel use now (L/100 km, or L/h
   when standing) and the average since the trip reset, plus intake temperature and engine load.
