@@ -62,7 +62,7 @@ int main(int argc, char** argv) {
     {"compare",       mk(SCREEN_COMPARE, 0.f, 0.f)},
     {"compare_start", mk(SCREEN_COMPARE, 0.f, 0.f)},
   };
-  shots[16].s.obdKmh = 103; shots[16].s.gpsKmh = 98.6f; shots[16].s.cmpKm = 37.2f; shots[16].s.cmpPct = 4.3f;
+  shots[16].s.obdKmh = 103; shots[16].s.gpsKmh = 98.6f; shots[16].s.cmpKm = 37.2f; shots[16].s.cmpPct = 4.3f; shots[16].s.cmpSuggestPct = -4.1f;
   shots[17].s.obdKmh = 12; shots[17].s.gpsKmh = -1;
   {   // cruising, warm
     UiState& e = shots[12].s;

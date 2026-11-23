@@ -64,6 +64,10 @@ Open `ios/InclinoLink.xcodeproj` in Xcode, pick your team under *Signing & Capab
 - The **speed check** screen shows the car's (OBD) and the phone's GPS speed side by side, the
   difference now, and the average difference over the distance driven with both above 20 km/h
   (GPS lags about a second, which averages out). That is the speedometer / tyre-size error.
+  It also shows the **speed correction** that would cancel it ("SET SPEED CORRECTION +8.7 %"):
+  enter that in the app (*Device Settings → Car Speed*, or `speed_correction` in config.txt). The
+  car's speed is then multiplied by 1 + correction / 100 everywhere: speed screen, trip, max, fuel
+  use, and the car side of the speed check (its label shows the correction in use).
 - GPS runs only while the inclinometer is connected. Set Location to **Always** so GPS can start
   when the device connects while the phone is locked.
 - iOS doesn't reopen a swiped-away app for Bluetooth. The in-app option *Restart after swipe-away*
@@ -74,7 +78,8 @@ Open `ios/InclinoLink.xcodeproj` in Xcode, pick your team under *Signing & Capab
 
 *InclinoLink → Device Settings* (while the inclinometer is connected) changes the `config.txt`
 settings live: warning/danger angles, alarm sound, brightness (the screen follows the slider), rev
-gauge red zone, drive log on/off + interval, remote IMU forward axis, OBD adapter name and probe.
+gauge red zone, car speed correction, drive log on/off + interval, remote IMU forward axis, OBD adapter
+name and probe.
 Changes apply at once and are written to `config.txt` a second after the last one (without an SD
 card they last until power-off). It also has **Set level**, **Reset peaks** and **Reset trip**.
 Only the OBD probe needs a restart; a new forward axis needs *Set level* again.
@@ -111,7 +116,7 @@ computer and restart. The card also stores:
 
 | File | Content |
 |---|---|
-| `/incl/config.txt` | warning/danger angles, buzzer, backlight, drive log on/off + interval, OBD adapter name, remote IMU forward axis, rev gauge red zone, OBD probe on/off |
+| `/incl/config.txt` | warning/danger angles, buzzer, backlight, drive log on/off + interval, OBD adapter name, remote IMU forward axis, rev gauge red zone, car speed correction, OBD probe on/off |
 | `/incl/rlevel_a.txt`, `rlevel_b.txt` | level reference (of the remote IMU) |
 | `/incl/state_a.txt`, `state_b.txt` | peak angles, max speed, trip, fuel used for the average, drive log counter |
 | `/incl/logs/NNNNN.csv` | drive log, one file per power-up: angles, speed + source, heading, OBD values |

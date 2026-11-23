@@ -45,6 +45,7 @@ struct DeviceConfig: Equatable {
         static let log = "log", logInterval = "log_interval"
         static let obdName = "obd_name", obdProbe = "obd_probe"
         static let remoteForward = "remote_forward", redline = "redline"
+        static let speedCorrection = "speed_correction"
     }
 
     /// Value text the firmware parses (atof): whole numbers without a decimal point.

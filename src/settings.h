@@ -18,6 +18,7 @@ struct Settings {
   char remoteForward[3] = REMOTE_FORWARD;   // its axis that points forward: "+x" .. "-z"
   float redlineRpm = ENGINE_REDLINE_RPM;    // rev gauge red zone
   bool obdProbe = OBD_PROBE;           // log Toyota mode-21 data blocks to probe.txt
+  float speedCorrPct = SPEED_CORRECTION_PCT;   // car (OBD) speed x (1 + this / 100)
 };
 extern Settings cfg;
 

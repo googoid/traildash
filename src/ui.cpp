@@ -630,7 +630,9 @@ static void renderCompare(const UiState& s) {
   gfx.line(110, 292, 370, 292, 1.2f, Paint(FAINT));
 
   const float col[2] = {162, 318};
-  const char* label[2] = {"CAR  (OBD)", "GPS  (PHONE)"};
+  char carLabel[28] = "CAR  (OBD)";
+  if (fabsf(s.speedCorrPct) >= 0.05f) snprintf(carLabel, sizeof carLabel, "CAR  (OBD %+.1f%%)", s.speedCorrPct);
+  const char* label[2] = {carLabel, "GPS  (PHONE)"};
   const float v[2] = {s.obdKmh, s.gpsKmh};
   for (int i = 0; i < 2; i++) {
     gfx.text(font_tiny, label[i], col[i], 150, DIM, 0);
@@ -662,7 +664,13 @@ static void renderCompare(const UiState& s) {
     if (fabsf(p) < 0.5f) snprintf(b, sizeof b, "CAR READS RIGHT");
     else snprintf(b, sizeof b, "CAR READS %.1f%% %s", fabsf(p), p > 0 ? "HIGH" : "LOW");
     gfx.text(font_med, b, CX, 416, fabsf(p) < 2.f ? GREEN : AMBER, 0);
-    gfx.text(font_tiny, "HOLD 2 s TO RESET", CX, 444, 0x4E5D6B, 0);
+    if (fabsf(p) >= 0.5f && s.cmpSuggestPct > -900) {   // the value to enter in the phone app
+      snprintf(b, sizeof b, "SET SPEED CORRECTION %+.1f %%", s.cmpSuggestPct);
+      gfx.text(font_tiny, b, CX, 442, TXT, 0);
+      gfx.text(font_tiny, "HOLD 2 s TO RESET", CX, 460, 0x4E5D6B, 0);
+    } else {
+      gfx.text(font_tiny, "HOLD 2 s TO RESET", CX, 444, 0x4E5D6B, 0);
+    }
   } else {
     gfx.text(font_tiny, "AVERAGE", CX, 384, DIM, 0);
     snprintf(b, sizeof b, "needs both above %d km/h", (int)CMP_MIN_KMH);

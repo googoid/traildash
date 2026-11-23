@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 Settings cfg;
 
@@ -64,6 +65,7 @@ static void applyOne(const char* k, const char* v, void* p) {
     if (ax == 'x' || ax == 'y' || ax == 'z') { s.remoteForward[0] = sg; s.remoteForward[1] = ax; s.remoteForward[2] = 0; }
   } else if (!strcmp(k, "redline")) s.redlineRpm = clampf(f, 2000, ENGINE_GAUGE_RPM);
   else if (!strcmp(k, "obd_probe")) s.obdProbe = f != 0;
+  else if (!strcmp(k, "speed_correction")) s.speedCorrPct = clampf(roundf(f * 10) / 10, -20, 20);
   else {
     if (c.unknown) c.unknown(k);
     return;
@@ -102,10 +104,11 @@ bool update(const char* text) {
 size_t formatCompact(char* out, size_t size) {
   int n = snprintf(out, size,
       "roll_warn=%g\nroll_danger=%g\npitch_warn=%g\npitch_danger=%g\nbuzzer=%d\nbacklight=%u\n"
-      "log=%d\nlog_interval=%g\nobd_name=%s\nremote_forward=%s\nredline=%g\nobd_probe=%d\n",
+      "log=%d\nlog_interval=%g\nobd_name=%s\nremote_forward=%s\nredline=%g\nobd_probe=%d\n"
+      "speed_correction=%g\n",
       cfg.rollWarnDeg, cfg.rollDangerDeg, cfg.pitchWarnDeg, cfg.pitchDangerDeg, cfg.buzzer ? 1 : 0,
       (unsigned)cfg.backlight, cfg.log ? 1 : 0, cfg.logIntervalS, cfg.obdName, cfg.remoteForward,
-      cfg.redlineRpm, cfg.obdProbe ? 1 : 0);
+      cfg.redlineRpm, cfg.obdProbe ? 1 : 0, cfg.speedCorrPct);
   return n < 0 ? 0 : (size_t)n < size ? (size_t)n : size - 1;
 }
 
@@ -143,10 +146,14 @@ size_t format(char* out, size_t size) {
       "\n"
       "# 1 = also read the car's maker-specific data blocks and log them to probe.txt\n"
       "# (slows the normal OBD values a little)\n"
-      "obd_probe = %d\n",
+      "obd_probe = %d\n"
+      "\n"
+      "# Car (OBD) speed correction, %%: the car's speed is multiplied by 1 + this / 100.\n"
+      "# +8 = the car shows 8 %% too little. The speed check screen suggests a value.\n"
+      "speed_correction = %g\n",
       cfg.rollWarnDeg, cfg.rollDangerDeg, cfg.pitchWarnDeg, cfg.pitchDangerDeg, cfg.buzzer ? 1 : 0,
       (unsigned)cfg.backlight, cfg.log ? 1 : 0, cfg.logIntervalS, cfg.obdName, cfg.remoteForward,
-      cfg.redlineRpm, cfg.obdProbe ? 1 : 0);
+      cfg.redlineRpm, cfg.obdProbe ? 1 : 0, cfg.speedCorrPct);
   return n < 0 ? 0 : (size_t)n;
 }
 

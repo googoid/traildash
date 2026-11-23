@@ -38,6 +38,7 @@
 
 // Speed comparison screen: car (OBD) vs GPS
 #define CMP_MIN_KMH          20.f    // average only above this (GPS speed is noisy when slow)
+#define SPEED_CORRECTION_PCT 0.f     // car (OBD) speed correction, % (config.txt: speed_correction)
 
 // Engine screen
 #define ENGINE_REDLINE_RPM   5000    // red zone of the rev gauge (config.txt: redline)

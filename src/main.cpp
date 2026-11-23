@@ -223,9 +223,11 @@ static void sensorTask(void*) {
       if (obdSpeed) sh.nav = NAV_OBD;
       else if (!blelink::connected()) sh.nav = NAV_NO_PHONE;
       else sh.nav = fresh && f.speedValid ? NAV_LIVE : NAV_NO_FIX;
+      // the car's speed, corrected (speedometer / tyre size error, measured on the speed check screen)
+      const float carKmh = od.speedKmh * (1.f + cfg.speedCorrPct * 0.01f);
       if (sh.nav == NAV_OBD) {
-        // the car's own speed: whole km/h, no GPS jitter, works in tunnels
-        float kmh = od.speedKmh;
+        // the car's own speed: no GPS jitter, works in tunnels
+        float kmh = carKmh;
         sh.speedKmh = kmh;
         sh.tripKm += kmh * navDt / 3600.f;
         if (kmh > sh.maxKmh) sh.maxKmh = kmh;
@@ -242,11 +244,12 @@ static void sensorTask(void*) {
       // speed comparison (car vs GPS)
       {
         bool gpsOk = blelink::connected() && fresh && f.speedValid;
-        sh.obdKmh = obdSpeed ? od.speedKmh : -1;
+        sh.obdKmh = obdSpeed ? carKmh : -1;
         sh.gpsKmh = gpsOk ? (f.speedMs * 3.6f < TRIP_MIN_KMH ? 0 : f.speedMs * 3.6f) : -1;
         bool accurate = f.speedAccMs >= 0 && f.speedAccMs * 3.6f < MAX_SPEED_ACC_KMH;
         if (obdSpeed && gpsOk && accurate && od.speedKmh >= CMP_MIN_KMH) {
-          // distances, not instant ratios: GPS lags ~1 s, which averages out over a drive
+          // distances, not instant ratios: GPS lags ~1 s, which averages out over a drive.
+          // Uncorrected, so the suggested correction doesn't depend on the one set now.
           sh.cmpObdKm += od.speedKmh * navDt / 3600.f;
           sh.cmpGpsKm += f.speedMs * 3.6f * navDt / 3600.f;
         }
@@ -269,13 +272,13 @@ static void sensorTask(void*) {
           float x = od.rpm > 0 ? od.mafGs * 3600.f / (FUEL_AFR * FUEL_G_PER_L) : 0;
           lph = lph < 0 ? x : lph + (x - lph) * fminf(1.f, navDt / FUEL_SMOOTH_S);
           sh.fuelL += x * navDt / 3600.f;
-          if (obdSpeed) sh.fuelKm += od.speedKmh * navDt / 3600.f;
+          if (obdSpeed) sh.fuelKm += carKmh * navDt / 3600.f;
         } else {
           lph = -1;
         }
         sh.fuelLph = lph >= 0 ? lph : -999;
         static float kmhS = 0;   // smoothed like the fuel flow, so the ratio is steady
-        kmhS = obdSpeed ? kmhS + (od.speedKmh - kmhS) * fminf(1.f, navDt / FUEL_SMOOTH_S) : 0;
+        kmhS = obdSpeed ? kmhS + (carKmh - kmhS) * fminf(1.f, navDt / FUEL_SMOOTH_S) : 0;
         sh.fuelL100 = lph >= 0 && obdSpeed && kmhS >= 5 ? lph / kmhS * 100.f : -999;
       }
 
@@ -428,7 +431,13 @@ static void renderTask(void*) {
     st.avgL100 = sh.fuelKm >= 1.f ? sh.fuelL / sh.fuelKm * 100.f : -999;
     st.obdKmh = sh.obdKmh; st.gpsKmh = sh.gpsKmh;
     st.cmpKm = sh.cmpGpsKm;
-    st.cmpPct = sh.cmpGpsKm >= 0.5f ? (sh.cmpObdKm / sh.cmpGpsKm - 1.f) * 100.f : -999;
+    {
+      const float corr = 1.f + cfg.speedCorrPct * 0.01f;
+      const bool enough = sh.cmpGpsKm >= 0.5f && sh.cmpObdKm > 0.1f;
+      st.cmpPct = enough ? (sh.cmpObdKm * corr / sh.cmpGpsKm - 1.f) * 100.f : -999;   // with the correction
+      st.cmpSuggestPct = enough ? (sh.cmpGpsKm / sh.cmpObdKm - 1.f) * 100.f : -999;
+      st.speedCorrPct = cfg.speedCorrPct;
+    }
     // heading: ease along the shortest way round, so the compass ring turns smoothly
     if (sh.courseDeg < 0) st.courseDeg = -1;
     else if (st.courseDeg < 0) st.courseDeg = sh.courseDeg;

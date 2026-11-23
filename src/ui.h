@@ -40,7 +40,9 @@ struct UiState {
   // speed comparison screen; < 0 = no fresh data
   float obdKmh = -1, gpsKmh = -1;
   float cmpKm = 0;                      // distance compared so far (both sources live, moving)
-  float cmpPct = -999;                  // car vs GPS over that distance, % (+ = car reads high)
+  float cmpPct = -999;                  // corrected car vs GPS over that distance, % (+ = car reads high)
+  float cmpSuggestPct = -999;           // speed_correction that would make it 0
+  float speedCorrPct = 0;               // speed_correction now
   // boot splash (when splash1 != nullptr)
   const char* splash1 = nullptr;
   const char* splash2 = nullptr;

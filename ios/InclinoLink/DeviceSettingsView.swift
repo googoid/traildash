@@ -113,6 +113,10 @@ private struct SettingsForm: View {
                 }
             }
 
+            if config.has(Key.speedCorrection) {
+                SpeedCorrectionSection(percent: config.number(Key.speedCorrection) ?? 0)
+            }
+
             if config.has(Key.log) {
                 DriveLogSection(enabled: bool(Key.log), interval: number(Key.logInterval, 1))
             }
@@ -293,6 +297,59 @@ private struct SensorSection: View {
         let sign = axis.hasPrefix("-") ? "−" : "+"
         let name = axis.dropFirst().uppercased()
         return axis == "+x" ? "\(sign)\(name) (board arrow)" : "\(sign)\(name)"
+    }
+}
+
+// MARK: - Speed correction
+
+/// Car (OBD) speed correction in %, typed in: the speed check screen on the device shows the value
+/// to enter ("SET SPEED CORRECTION +8.7 %").
+private struct SpeedCorrectionSection: View {
+    @EnvironmentObject private var link: LinkManager
+    let percent: Double
+
+    @State private var draft = ""
+    @FocusState private var editing: Bool
+    static let range = -20.0...20.0
+
+    var body: some View {
+        Section {
+            LabeledContent {
+                HStack(spacing: 4) {
+                    TextField("0", text: $draft)
+                        .multilineTextAlignment(.trailing)
+                        .keyboardType(.numbersAndPunctuation)   // has the minus sign, unlike the decimal pad
+                        .submitLabel(.done)
+                        .focused($editing)
+                        .onSubmit(commit)
+                        .monospacedDigit()
+                    Text("%").foregroundStyle(.secondary)
+                }
+            } label: {
+                Label("Speed Correction", systemImage: "speedometer")
+            }
+        } header: {
+            Text("Car Speed")
+        } footer: {
+            Text("Corrects the speed read from the car (wrong tyre size, speedometer error): +8 % makes it 8 % higher. Drive a few km above 20 km/h with the phone connected, then enter the value the inclinometer's speed check screen suggests.")
+        }
+        .onAppear { draft = Self.text(percent) }
+        .onChange(of: percent) { _, new in if !editing { draft = Self.text(new) } }
+        .onChange(of: editing) { _, isEditing in if !isEditing { commit() } }
+    }
+
+    private static func text(_ v: Double) -> String { v == 0 ? "" : String(format: "%+.1f", v) }
+
+    private func commit() {
+        // accept "8.7", "+8,7", "-3" (comma or point, whatever the keyboard gave)
+        let t = draft.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
+        guard let v = t.isEmpty ? 0 : Double(t.replacingOccurrences(of: "+", with: "")) else {
+            draft = Self.text(percent)   // not a number: show the device's value again
+            return
+        }
+        let clamped = (min(max(v, Self.range.lowerBound), Self.range.upperBound) * 10).rounded() / 10
+        draft = Self.text(clamped)
+        if clamped != percent { link.setConfig(DeviceConfig.Key.speedCorrection, DeviceConfig.format(clamped)) }
     }
 }
 
