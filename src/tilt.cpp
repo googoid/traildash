@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <math.h>
+#include <esp_heap_caps.h>
 
 // Signal chain (250 Hz):
 //   accel (remote IMU, MPU-6050 DLPF ~20 Hz)
@@ -71,7 +72,8 @@ static float accRaw = 0, accFwd = 0;
 // (the gyro still turns the reading without delay).
 static constexpr int DLY_DECIM = 5;      // one entry per 5 samples (20 ms)
 static constexpr int DLY_N = TILT_ACC_DELAY_MS / (4 * DLY_DECIM) + 1;
-static V3 dlyA[DLY_N], dlyG[DLY_N];      // accelerometer, and the estimate at that time
+static V3* dlyA = nullptr;               // accelerometer, and the estimate at that time (PSRAM:
+static V3* dlyG = nullptr;               // internal RAM is short)
 static int dlyI = 0, dlyK = 0;
 static Attitude att = {0, 0, 0, false};
 
@@ -138,6 +140,8 @@ static void computeAngles() {
 }
 
 void begin() {
+  dlyA = (V3*)heap_caps_calloc(2 * DLY_N, sizeof(V3), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  dlyG = dlyA ? dlyA + DLY_N : nullptr;
   levelStored = loadMount();
   Serial.printf("[tilt] level reference %s\n", levelStored ? "loaded" : "not set");
 }
@@ -191,7 +195,7 @@ void update(const ImuSample& s, float dt) {
     if (++seedN < SEED_N) return;
     V3 g = scale(seedSum, 1.f / SEED_N);
     for (V3& m : med) m = g;
-    for (int k = 0; k < DLY_N; k++) dlyA[k] = dlyG[k] = g;
+    for (int k = 0; dlyA && k < DLY_N; k++) dlyA[k] = dlyG[k] = g;
     gFast = gOut = g;
     magRef = len(g);
     if (!levelStored) buildMount(g);   // no reference yet: current orientation = level
@@ -235,9 +239,9 @@ void update(const ImuSample& s, float dt) {
           median5(med[0].z, med[1].z, med[2].z, med[3].z, med[4].z)};
 
   // ---- the car's own forward acceleration is not tilt ----
-  if (++dlyK >= DLY_DECIM) { dlyK = 0; dlyA[dlyI] = r; dlyG[dlyI] = gOut; dlyI = (dlyI + 1) % DLY_N; }
+  if (dlyA && ++dlyK >= DLY_DECIM) { dlyK = 0; dlyA[dlyI] = r; dlyG[dlyI] = gOut; dlyI = (dlyI + 1) % DLY_N; }
   spdAge += dt;
-  const bool haveSpeed = spdAge < TILT_ACC_GAP_MS * 1e-3f;
+  const bool haveSpeed = dlyA && spdAge < TILT_ACC_GAP_MS * 1e-3f;
   if (!haveSpeed) accRaw = 0;                      // no speed: nothing to take out, no need to wait
   accFwd += (accRaw - accFwd) * fminf(1.f, dt / TILT_ACC_SMOOTH_S);
   V3 gThen = gOut;
