@@ -12,7 +12,6 @@ Printed lying on its side (profile on the bed) -> no supports, and layer lines
 run along the bending direction, so the upright is strong.
 
 Run:  python mount.py          -> mount.stl / mount.step (TILT below, 20 deg)
-      python mount.py 0        -> mount_upright.stl / .step (display vertical)
       python mount.py 12       -> mount_tilt12.stl / .step
 """
 import math, os
@@ -101,7 +100,7 @@ if __name__ == "__main__":
     name = "mount"
     if len(sys.argv) > 1:
         set_tilt(float(sys.argv[1]))
-        name = "mount_upright" if TILT == 0 else f"mount_tilt{sys.argv[1]}"
+        name = f"mount_tilt{sys.argv[1]}"
     m = build()
     bb = m.val().BoundingBox()
     print(f"stand {bb.xlen:.0f} x {WIDTH:.0f} mm footprint, {bb.ylen:.0f} mm tall, "
