@@ -671,8 +671,7 @@ void setup() {
   while (millis() - splashT0 < SPLASH_MS - FADE_OUT_MS) delay(10);
   board::fadeBacklight(cfg.backlight, 0, FADE_OUT_MS);
 
-  if (!sh.levelSet) showToast("HOLD 2 s TO SET LEVEL");
-  else if (!storage::mounted()) showToast("NO SD CARD");
+  if (!storage::mounted()) showToast("NO SD CARD");
 
   xTaskCreatePinnedToCore(sensorTask, "sensors", 6144, nullptr, 5, nullptr, 1);
   xTaskCreatePinnedToCore(renderTask, "render", 8192, nullptr, 3, nullptr, 0);
