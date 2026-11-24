@@ -11,7 +11,7 @@ the insert pushes into the speedometer opening of the cluster bezel:
   centre, less than the display radius, so the display sits SHIFT mm above
   the centre of the opening
 - front flange sits on the silver bezel ring (outer edge a circle about the display
-  centre so the visible ring is even, flat at the bottom) and
+  centre, so the display is centred in it; flat at the bottom) and
   hides the gap; its lip covers the enclosure rim, so only the glass shows
 - six spiral leaf springs on the round part push the insert down onto the flat
   and centre it sideways. They sit deep in the opening (12-29 mm behind the
@@ -49,14 +49,7 @@ import enclosure as E
 # ---------------- car (from the photo, see docstring) ----------------
 OPEN_D     = 128.0     # bezel opening (round part), estimated
 FLAT_Y     = 47.2      # opening centre -> flat bottom edge, estimated
-FLANGE_OVER = 3.0      # flange overlaps the bezel by this much all round
-# The display sits SHIFT above the opening centre, so a flange that follows the
-# opening shows a ring that is thin at the top and wide at the sides. Its outer
-# edge is a circle about the DISPLAY centre instead (same ring width all over the
-# top); the lower corners still follow the opening to cover it. On the photo the
-# silver bezel reaches ~65 mm above the display centre and ~69 mm to the sides.
-RING_R     = 65.0       # ~1.2 mm overlap onto the bezel at the sides
-RING_BLEND = 6.0       # radius of the fillet where the ring meets the opening shape
+FLANGE_OVER = 3.0      # flange bottom runs this far below the opening's flat
 
 # ---------------- insert ----------------
 FIT        = 0.20                      # radial clearance around the enclosure
@@ -67,6 +60,12 @@ FLAT_CLEAR = 0.3                       # insert bottom sits this far above the f
 SHIFT      = TUBE_R + FLAT_CLEAR - FLAT_Y   # display centre above opening centre
 OY         = -SHIFT                    # opening centre (y) in display coords
 SHOE_Y     = OY - FLAT_Y + FLAT_CLEAR  # insert bottom face (y)
+# The display sits SHIFT above the opening centre (the flat stops it going lower),
+# so the flange's outer edge is a circle about the DISPLAY centre: the display is
+# exactly centred in it. Kept small enough to stay on the silver bezel at the top;
+# that leaves a thin crescent of the opening (up to ~2 mm) uncovered at the lower
+# corners, which is accepted.
+RING_R     = 66.0
 SHOE_W     = 30.0                      # width of the flat bottom pad (between the lower hooks)
 LIP_IN_R   = E.POCKET_R + 0.3          # front lip covers the enclosure rim only
 LIP_T      = 1.2                       # lip thickness in front of the enclosure
@@ -185,18 +184,11 @@ def hook(ang):
 
 
 def flange():
-    """Circle RING_R about the display centre, joined to the opening shape grown by
-    FLANGE_OVER (which sticks out at the lower corners), flat at the bottom; the
-    inside corners where the two outlines meet are rounded off."""
+    """Circle RING_R about the display centre, flat at the bottom."""
     flat = OY - FLAT_Y - FLANGE_OVER
-    ring = (cq.Workplane("XY").workplane(offset=FRONT).circle(RING_R).extrude(FLANGE_T)
+    return (cq.Workplane("XY").workplane(offset=FRONT).circle(RING_R).extrude(FLANGE_T)
             .intersect(cq.Workplane("XY").workplane(offset=FRONT - 1)
                        .center(0, flat + 200).rect(400, 400).extrude(FLANGE_T + 2)))
-    shape = ring.union(d_shape(OPEN_D / 2 + FLANGE_OVER, flat, FRONT, FLANGE_BACK))
-    face = shape.faces("<Z").val()
-    outline = face.outerWire().offset2D(RING_BLEND, "arc")[0].offset2D(-RING_BLEND, "arc")[0]
-    return cq.Workplane("XY").add(cq.Solid.extrudeLinear(cq.Face.makeFromWires(outline),
-                                                         cq.Vector(0, 0, FLANGE_T)))
 
 
 def build():
@@ -258,6 +250,10 @@ def check(body):
     print("springs clear of hook flex zones:", "OK" if hit < 1e-3 else f"NO ({hit:.1f} mm3)")
     if hit >= 1e-3:
         raise SystemExit("spring over a hook")
+    # how much of the opening the flange leaves open
+    hole = d_shape(OPEN_D / 2, OY - FLAT_Y, FRONT, FLANGE_BACK).val()
+    bare = hole.cut(flange().val()).Volume()
+    print(f"opening left uncovered by the flange (lower corners, accepted): {bare / FLANGE_T:.0f} mm2")
     # the window for the glass must be open all the way through
     win = cq.Solid.makeCylinder(LIP_IN_R - 0.05, TUBE_END - FRONT + 2, cq.Vector(0, 0, FRONT - 1))
     blk = body.val().intersect(win).Volume()
