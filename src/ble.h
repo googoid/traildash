@@ -18,7 +18,7 @@
 #define CFG_MAX_LEN      320
 // Actions: write one byte. The device confirms with a toast on its screen.
 #define CTRL_CHAR_UUID   "CA5380E5-BE5F-4B00-8875-DB58900DAEAC"
-enum : uint8_t { CMD_NONE = 0, CMD_SET_LEVEL = 1, CMD_RESET_PEAKS = 2, CMD_RESET_TRIP = 3 };
+enum : uint8_t { CMD_NONE = 0, CMD_SET_LEVEL = 1, CMD_RESET_PEAKS = 2, CMD_RESET_TRIP = 3, CMD_RESET_TRIP_B = 4 };
 
 // Packet v1, little-endian, 10 bytes:
 //   u8  version (=1)

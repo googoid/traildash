@@ -70,6 +70,7 @@ enum DeviceCommand: UInt8 {
     case setLevel = 1
     case resetPeaks = 2
     case resetTrip = 3
+    case resetTripB = 4
 }
 
 enum DeviceLinkError: LocalizedError {

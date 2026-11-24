@@ -404,7 +404,7 @@ private struct ActionsSection: View {
     @EnvironmentObject private var link: LinkManager
 
     private enum Confirm: Identifiable {
-        case level, peaks, trip
+        case level, peaks, trip, tripB
         var id: Self { self }
     }
     private enum LevelPhase { case idle, leveling, done }
@@ -430,6 +430,9 @@ private struct ActionsSection: View {
             Button(role: .destructive) { confirm = .trip } label: {
                 Label("Reset Trip and Max Speed", systemImage: "road.lanes")
             }
+            Button(role: .destructive) { confirm = .tripB } label: {
+                Label("Reset Trip B and Average Fuel", systemImage: "fuelpump")
+            }
         } header: {
             Text("Calibrate and Reset")
         } footer: {
@@ -445,12 +448,14 @@ private struct ActionsSection: View {
             case .level: Button("Set Level") { setLevel() }
             case .peaks: Button("Reset Peaks", role: .destructive) { run(.resetPeaks) }
             case .trip: Button("Reset Trip", role: .destructive) { run(.resetTrip) }
+            case .tripB: Button("Reset Trip B", role: .destructive) { run(.resetTripB) }
             }
         } message: { what in
             switch what {
             case .level: Text("Park on flat, level ground. The car must stay still for a few seconds.")
             case .peaks: Text("The highest roll and pitch angles are cleared.")
-            case .trip: Text("Trip distance, max speed and the average fuel use start again from zero.")
+            case .trip: Text("Trip distance and max speed start again from zero. Trip B is kept.")
+            case .tripB: Text("Trip B and the average fuel use start again from zero.")
             }
         }
         .sensoryFeedback(.success, trigger: successes)
@@ -461,6 +466,7 @@ private struct ActionsSection: View {
         case .level: "Set level now?"
         case .peaks: "Reset peak angles?"
         case .trip: "Reset trip?"
+        case .tripB: "Reset trip B?"
         case nil: ""
         }
     }

@@ -29,7 +29,8 @@ The project is under git (branch `main`). Work like this:
 |---|---|
 | Tap | Next screen: speed → engine → inclinometer → peaks → speed check. The screen shown is remembered across power-ups (SD card). |
 | Hold 2 s | **Set level** — park on flat ground first. The screen blinks off briefly while it is saved. |
-| Hold 2 s on the speed or engine screen | Reset max speed, trip distance and average fuel use |
+| Hold 2 s on the speed screen | Reset max speed and trip (A) |
+| Hold 2 s on the engine screen | Reset trip B and average fuel use |
 | Hold 2 s on the speed check screen | Restart the car-vs-GPS average |
 | Double-tap | Reset peak angles |
 | BOOT button | Short = next screen, long = same as hold |
@@ -45,20 +46,24 @@ Open `ios/InclinoLink.xcodeproj` in Xcode, pick your team under *Signing & Capab
 - The app finds the inclinometer (advertising as `Inclinometer`), remembers it, and from then on
   iOS reconnects automatically whenever the car powers up — also with the phone locked.
 - It sends speed + course about once per second; the device shows `--` after 3 s without data.
-- Max speed and trip distance are computed on the device and kept on the SD card (without a card
-  they reset at power-up). Distance is speed × time, so it isn't counted while there is no speed source.
+- Max speed and the two trips (A and B) are computed on the device and kept on the SD card (without
+  a card they reset at power-up). They count only the car's own (OBD) speed, with the speed
+  correction: distance is speed × time, so nothing is counted without the OBD adapter — GPS speed
+  is still shown then, but not added to the trips. Trip A resets with max speed (hold on the speed
+  screen), trip B with the average fuel use (hold on the engine screen), so B can run long-term.
 - With an OBD-II BLE adapter (ELM327, e.g. Vgate iOS-Vlink) in the car, speed comes from the car
   instead (status shows **OBD**); see `src/obd.cpp`.
 - The **speed screen** looks like a car cluster: a rev needle (OBD rpm; it rests on 0 without OBD,
   red zone from `redline`), the current gear next to a lamp (green = speed source live, amber =
-  OBD adapter not delivering yet, grey = no speed), the speed, and trip / max / source below it.
+  OBD adapter not delivering yet, grey = no speed), the speed, trip A / max below it, then trip B
+  and the source (a long warning like OBD CONNECTING takes that whole line).
   The box shows **N** in P or N (the car doesn't tell them apart), **R** in reverse and the current
   gear (1–5) in D. It comes from the engine ECU's Toyota data blocks, found by probing a 2005 4Runner:
   `21DA` byte A = gear, `21E6` byte A bit 0x10 = P/N, `21D3` byte C bit 0x80 = D (clear = R).
   On other cars it shows `-`.
 - The **engine screen** (OBD only) shows a rev gauge (red zone: `redline` in config.txt), coolant
   (blue = cold, amber from 105 °C, red from 110 °C), adapter voltage, fuel use now (L/100 km, or L/h
-  when standing) and the average since the trip reset, plus intake temperature and engine load.
+  when standing) and the average since trip B was reset, plus intake temperature and engine load.
   Fuel use is calculated from the mass airflow sensor (air ÷ 14.7): right at cruise, low under full
   throttle. The adapter reads ~0.3 V below the battery, so 12.8–13.0 V at idle is normal.
 - The **speed check** screen shows the car's (OBD) and the phone's GPS speed side by side, the
@@ -81,7 +86,7 @@ settings live: warning/danger angles, alarm sound, brightness (the screen follow
 gauge red zone, car speed correction, drive log on/off + interval, remote IMU forward axis, OBD adapter
 name and probe.
 Changes apply at once and are written to `config.txt` a second after the last one (without an SD
-card they last until power-off). It also has **Set level**, **Reset peaks** and **Reset trip**.
+card they last until power-off). It also has **Set level**, **Reset peaks**, **Reset trip** (A + max speed) and **Reset trip B** (+ average fuel).
 Only the OBD probe needs a restart; a new forward axis needs *Set level* again.
 Debug builds started with the launch argument `-demoDevice` show the screen with a pretend device.
 
@@ -118,8 +123,8 @@ computer and restart. The card also stores:
 |---|---|
 | `/incl/config.txt` | warning/danger angles, buzzer, backlight, drive log on/off + interval, OBD adapter name, remote IMU forward axis, rev gauge red zone, car speed correction, OBD probe on/off |
 | `/incl/rlevel_a.txt`, `rlevel_b.txt` | level reference (of the remote IMU) |
-| `/incl/state_a.txt`, `state_b.txt` | peak angles, max speed, trip, fuel used for the average, drive log counter |
-| `/incl/logs/NNNNN.csv` | drive log, one file per power-up: angles, speed + source, heading, OBD values |
+| `/incl/state_a.txt`, `state_b.txt` | peak angles, max speed, trips A and B, fuel used for the average, drive log counter |
+| `/incl/logs/NNNNN.csv` | drive log, one file per power-up: angles, speed + source, heading, OBD values, trips A and B |
 | `/incl/probe.txt` | OBD probe (`obd_probe = 1`, Toyota only): the gear / selector data blocks (21DA, 21E6, 21D3), each reply logged when it changes, with speed / rpm / throttle / gear / selector |
 
 Records are written alternately to the `_a`/`_b` file with a sequence number and checksum, so a power
@@ -129,7 +134,8 @@ nothing else is kept. A level reference already in flash is copied to a new card
 
 Without a card reader, over USB serial: `s` lists the files, `o` prints the end of `obd.txt`,
 `b` the end of `probe.txt` (`b500` = its last 500 KB),
-`c21` prints drive log 21, `v` prints the current screen, trip, fuel and comparison totals.
+`c21` prints drive log 21, `v` prints the current screen, trips, fuel and comparison totals.
+`t` resets trip A + max, `T` trip B + average fuel.
 
 ## How it works
 

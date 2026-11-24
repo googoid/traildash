@@ -94,7 +94,7 @@ class CfgCb : public NimBLECharacteristicCallbacks {
 class CtrlCb : public NimBLECharacteristicCallbacks {
   void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& info) override {
     NimBLEAttValue v = c->getValue();
-    if (v.size() == 1 && v[0] >= CMD_SET_LEVEL && v[0] <= CMD_RESET_TRIP) command = v[0];
+    if (v.size() == 1 && v[0] >= CMD_SET_LEVEL && v[0] <= CMD_RESET_TRIP_B) command = v[0];
   }
 };
 

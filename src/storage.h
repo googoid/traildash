@@ -2,7 +2,7 @@
 //
 //  /incl/config.txt          settings, edited by hand (written with defaults if missing)
 //  /incl/rlevel_a|b.txt      level reference (mount orientation of the remote IMU)
-//  /incl/state_a|b.txt       peaks, max speed, trip, log counter
+//  /incl/state_a|b.txt       peaks, max speed, trips A + B, fuel, log counter
 //  /incl/logs/NNNNN.csv      drive log, one file per power-up
 //  /incl/obd.txt             OBD adapter diagnostics (connection, protocol, supported PIDs)
 //  /incl/probe.txt           raw Toyota mode-21 replies while probing (config.txt: obd_probe)
@@ -16,8 +16,9 @@
 
 struct PersistState {
   float peakRollL = 0, peakRollR = 0, peakPitchUp = 0, peakPitchDn = 0;
-  float maxKmh = 0, tripKm = 0;
-  float fuelL = 0, fuelKm = 0;   // fuel used and distance driven while it was measured (OBD), since trip reset
+  float maxKmh = 0;
+  double tripKm = 0, tripBKm = 0;   // trips A and B (OBD distance)
+  double fuelL = 0, fuelKm = 0;     // fuel used and distance driven while it was measured (OBD), since trip B reset
   uint32_t logNo = 0;   // number of the last drive log file
   uint8_t screen = 0;   // shown screen, restored at power-up
 };

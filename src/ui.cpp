@@ -355,7 +355,7 @@ static void buildEngine() {
   gfx.line(150, 326, 330, 326, 1.2f, Paint(FAINT));
   gfx.text(font_tiny, "COOLANT  °C", EN_COL_L, EN_ROW1, DIM, 0);
   gfx.text(font_tiny, "BATTERY  V", EN_COL_R, EN_ROW1, DIM, 0);
-  gfx.text(font_tiny, "AVG  L/100 km", EN_COL_R, EN_ROW2, DIM, 0);
+  gfx.text(font_tiny, "AVG B  L/100 km", EN_COL_R, EN_ROW2, DIM, 0);
 }
 
 bool begin(void* (*alloc)(size_t), void (*flush)(void*, size_t)) {
@@ -502,7 +502,13 @@ static void renderPeaks(const UiState& s) {
            s.levelSet ? 0x4E5D6B : AMBER, 0);
 }
 
-// Car-cluster speed screen: rev needle, gear, digital speed, trip / max.
+// Trip distance: one decimal below 1000 km.
+static void fmtKm(char* b, size_t n, float km) {
+  if (km < 1000.f) snprintf(b, n, "%.1f km", km);
+  else snprintf(b, n, "%d km", (int)km);
+}
+
+// Car-cluster speed screen: rev needle, gear, digital speed, trip A / max, trip B.
 static void renderSpeed(const UiState& s) {
   char b[40];
 
@@ -527,16 +533,27 @@ static void renderSpeed(const UiState& s) {
     gfx.text(font_speed, "--", SC_SPEED_X, SC_SPEED_Y, 0x4A4A4A, 1);
   }
 
-  // ---- trip / max, then the source (or why there is none), centred in the narrowing panel ----
+  // ---- trip A / max, then trip B + the source (or why there is none), centred in the narrowing panel ----
   auto mid = [](float y) { return (scLeft(y) + scRight(y - 5)) * 0.5f; };
-  if (s.tripKm < 1000.f) snprintf(b, sizeof b, "%.1f km   MAX %d", s.tripKm, (int)lroundf(s.maxKmh));
-  else snprintf(b, sizeof b, "%d km   MAX %d", (int)s.tripKm, (int)lroundf(s.maxKmh));
+  char km[16];
+  fmtKm(km, sizeof km, s.tripKm);
+  snprintf(b, sizeof b, "%s   MAX %d", km, (int)lroundf(s.maxKmh));
   gfx.text(font_tiny, b, mid(SC_INFO_Y), SC_INFO_Y, 0x9A9A9A, 0);
   const char* st = s.nav == NAV_OBD ? "OBD" : s.nav == NAV_LIVE ? "GPS"
                  : s.nav == NAV_NO_FIX ? "NO GPS FIX" : "NO PHONE";
   if (s.obdNote && s.nav != NAV_OBD) st = s.obdNote;   // adapter found but no speed from it yet
-  const float sy = SC_INFO_Y + 20;
-  gfx.text(font_tiny, st, mid(sy), sy, live && !s.obdNote ? 0x6A6A6A : AMBER, 0);
+  {
+    const float sy = SC_INFO_Y + 20;
+    fmtKm(km, sizeof km, s.tripBKm);
+    snprintf(b, sizeof b, "B %s   ", km);
+    float wb = gfx.textWidth(font_tiny, b);
+    const float ws = gfx.textWidth(font_tiny, st);
+    // a long note (OBD CONNECTING ...) takes the whole line: trip B isn't counting then anyway
+    if (wb + ws > scRight(sy - 5) - scLeft(sy) + 18) { b[0] = 0; wb = 0; }
+    const float x0 = mid(sy) - (wb + ws) * 0.5f;
+    gfx.text(font_tiny, b, x0, sy, 0x9A9A9A, -1);
+    gfx.text(font_tiny, st, x0 + wb, sy, live && !s.obdNote ? 0x6A6A6A : AMBER, -1);
+  }
 
   // ---- rev needle (rests on 0 without OBD) ----
   {
@@ -735,10 +752,10 @@ static void overlays(const UiState& s) {
       gfx.text(font_tiny, "keep the car still", CX, 264, DIM, 0);
     } else {
       gfx.arc(CX, CY, 130, 136, 0, 360.f * clampf(s.holdProgress, 0, 1), Paint(ACCENT));
-      bool trip = s.screen == SCREEN_SPEED || s.screen == SCREEN_ENGINE, cmp = s.screen == SCREEN_COMPARE;
-      gfx.text(font_med, trip ? "RESET TRIP" : cmp ? "RESET AVERAGE" : "SET LEVEL", CX, 236, TXT, 0);
-      gfx.text(font_tiny, trip ? "clears max, trip & avg fuel" : cmp ? "starts the comparison over"
-                        : "park level & keep holding", CX, 262, DIM, 0);
+      const bool spd = s.screen == SCREEN_SPEED, eng = s.screen == SCREEN_ENGINE, cmp = s.screen == SCREEN_COMPARE;
+      gfx.text(font_med, spd ? "RESET TRIP" : eng ? "RESET TRIP B" : cmp ? "RESET AVERAGE" : "SET LEVEL", CX, 236, TXT, 0);
+      gfx.text(font_tiny, spd ? "clears trip & max speed" : eng ? "clears trip B & avg fuel"
+                        : cmp ? "starts the comparison over" : "park level & keep holding", CX, 262, DIM, 0);
     }
   }
 

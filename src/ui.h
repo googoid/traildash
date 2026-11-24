@@ -28,7 +28,8 @@ struct UiState {
   const char* obdNote = nullptr;        // OBD adapter state while it isn't supplying speed (null = none)
   float speedKmh = -1;                  // <0 = no fresh data
   float courseDeg = -1;                 // 0..360, <0 = unknown
-  float maxKmh = 0, tripKm = 0;
+  float maxKmh = 0, tripKm = 0;         // trip A + max speed (car's speed only)
+  float tripBKm = 0;                    // trip B (car's speed only, reset on the engine screen)
   // engine screen (OBD); values < -900 = not available
   uint8_t obdState = 0;                 // obd::State: 0 scanning, 1 connecting, 2 init, 3 no answer, 4 live
   uint8_t gear = 0;                     // current gear (Toyota 21DA), 0 = unknown
@@ -36,7 +37,7 @@ struct UiState {
   float rpm = -999, coolantC = -999, volts = -999, intakeC = -999, loadPct = -999;
   float fuelLph = -999;                 // instant fuel flow, L/h
   float fuelL100 = -999;                // instant consumption, L/100 km (only while moving)
-  float avgL100 = -999;                 // since trip reset
+  float avgL100 = -999;                 // since trip B reset
   // speed comparison screen; < 0 = no fresh data
   float obdKmh = -1, gpsKmh = -1;
   float cmpKm = 0;                      // distance compared so far (both sources live, moving)

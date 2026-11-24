@@ -130,15 +130,17 @@ bool loadState(PersistState& s) {
   if (!loadRecord(recState, buf, sizeof buf)) return false;
   settings::parseKv(buf, [](const char* k, const char* v, void* p) {
     auto* s = (PersistState*)p;
-    float f = (float)atof(v);
+    double d = atof(v);
+    float f = (float)d;
     if (!strcmp(k, "peak_roll_l")) s->peakRollL = f;
     else if (!strcmp(k, "peak_roll_r")) s->peakRollR = f;
     else if (!strcmp(k, "peak_pitch_up")) s->peakPitchUp = f;
     else if (!strcmp(k, "peak_pitch_dn")) s->peakPitchDn = f;
     else if (!strcmp(k, "max_kmh")) s->maxKmh = f;
-    else if (!strcmp(k, "trip_km")) s->tripKm = f;
-    else if (!strcmp(k, "fuel_l")) s->fuelL = f;
-    else if (!strcmp(k, "fuel_km")) s->fuelKm = f;
+    else if (!strcmp(k, "trip_km")) s->tripKm = d;   // trip A (key from before trip B)
+    else if (!strcmp(k, "trip_b_km")) s->tripBKm = d;
+    else if (!strcmp(k, "fuel_l")) s->fuelL = d;
+    else if (!strcmp(k, "fuel_km")) s->fuelKm = d;
     else if (!strcmp(k, "log_no")) s->logNo = strtoul(v, nullptr, 10);
     else if (!strcmp(k, "screen")) s->screen = (uint8_t)atoi(v);
   }, &s);
@@ -147,11 +149,11 @@ bool loadState(PersistState& s) {
 
 bool saveState(const PersistState& s) {
   if (!ok) return false;
-  char body[300];
+  char body[360];
   snprintf(body, sizeof body,
            "peak_roll_l=%.2f\npeak_roll_r=%.2f\npeak_pitch_up=%.2f\npeak_pitch_dn=%.2f\n"
-           "max_kmh=%.1f\ntrip_km=%.3f\nfuel_l=%.3f\nfuel_km=%.3f\nlog_no=%lu\nscreen=%u\n",
-           s.peakRollL, s.peakRollR, s.peakPitchUp, s.peakPitchDn, s.maxKmh, s.tripKm, s.fuelL, s.fuelKm,
+           "max_kmh=%.1f\ntrip_km=%.3f\ntrip_b_km=%.3f\nfuel_l=%.3f\nfuel_km=%.3f\nlog_no=%lu\nscreen=%u\n",
+           s.peakRollL, s.peakRollR, s.peakPitchUp, s.peakPitchDn, s.maxKmh, s.tripKm, s.tripBKm, s.fuelL, s.fuelKm,
            (unsigned long)s.logNo, (unsigned)s.screen);
   return saveRecord(recState, body);
 }

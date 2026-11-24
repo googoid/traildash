@@ -2,7 +2,8 @@
 //
 //  Tap            next screen   (dual gauge -> speed -> peaks)
 //  Hold 2 s       set level (park on flat ground first; stored in flash, screen blinks)
-//                 on the speed screen: reset max speed + trip instead
+//                 on the speed screen: reset max speed + trip A instead,
+//                 on the engine screen: reset trip B + its average fuel use
 //  Double-tap     reset peak values
 //  BOOT button    short = next screen, long = same as hold
 //
@@ -46,15 +47,17 @@ struct Shared {
   const char* volatile obdNote = nullptr;
   volatile float speedKmh = -1;   // <0 = no fresh data
   volatile float courseDeg = -1;  // <0 = unknown
-  volatile float maxKmh = 0;
-  volatile float tripKm = 0;
+  volatile float maxKmh = 0;   // OBD speed only, like the trips
+  // Trips A and B: distance from the car's (OBD, corrected) speed only. Doubles: added every
+  // 4 ms, a float would stop counting properly past ~1000 km.
+  volatile double tripKm = 0, tripBKm = 0;
   // engine (OBD); < -900 = not available
   volatile uint8_t obdState = 0;
   volatile float rpm = -999, coolantC = -999, volts = -999, intakeC = -999, loadPct = -999;
   volatile uint8_t gear = 0;      // 0 = unknown
   volatile char selector = 0;     // 'N' (P or N), 'R', 'D'; 0 = unknown
   volatile float fuelLph = -999, fuelL100 = -999;
-  volatile float fuelL = 0, fuelKm = 0;   // since trip reset (average consumption)
+  volatile double fuelL = 0, fuelKm = 0;  // since trip B reset (average consumption)
   // speed comparison: both sources separately, distances while both were live and moving
   volatile float obdKmh = -1, gpsKmh = -1;
   volatile float cmpObdKm = 0, cmpGpsKm = 0;
@@ -70,7 +73,8 @@ static void resetPeaks() {
   sh.peakRollL = 0; sh.peakRollR = 0; sh.peakPitchUp = 0; sh.peakPitchDn = 0;
 }
 
-static void resetTrip() { sh.maxKmh = 0; sh.tripKm = 0; sh.fuelL = 0; sh.fuelKm = 0; }
+static void resetTrip() { sh.maxKmh = 0; sh.tripKm = 0; }
+static void resetTripB() { sh.tripBKm = 0; sh.fuelL = 0; sh.fuelKm = 0; }
 
 static void nextScreen() { sh.screen = (sh.screen + 1) % SCREEN_COUNT; }
 
@@ -97,7 +101,8 @@ struct PressTracker {
         progress = (float)(held - 350) / (LONG_PRESS_MS - 350);
         if (progress >= 1.f) {
           longFired = true; pendingTapAt = 0; progress = 0;
-          if (sh.screen == SCREEN_SPEED || sh.screen == SCREEN_ENGINE) { resetTrip(); showToast("TRIP RESET"); }
+          if (sh.screen == SCREEN_SPEED) { resetTrip(); showToast("TRIP RESET"); }
+          else if (sh.screen == SCREEN_ENGINE) { resetTripB(); showToast("TRIP B RESET"); }
           else if (sh.screen == SCREEN_COMPARE) { sh.cmpObdKm = 0; sh.cmpGpsKm = 0; showToast("AVERAGE RESET"); }
           else startLevel();
         }
@@ -136,7 +141,7 @@ static void sensorTask(void*) {
   uint32_t lastUs = micros();
   uint32_t n = 0;
   float pkPitch = 0, pkRoll = 0;           // low-passed for peak capture
-  uint32_t lastNavSeq = 0, lastNavMs = millis();
+  uint32_t lastNavMs = millis();
   bool alarm = false;
   uint32_t lastPrint = 0;
   TickType_t wake = xTaskGetTickCount();
@@ -205,6 +210,7 @@ static void sensorTask(void*) {
         case CMD_SET_LEVEL: startLevel(); break;
         case CMD_RESET_PEAKS: resetPeaks(); showToast("PEAKS RESET"); break;
         case CMD_RESET_TRIP: resetTrip(); showToast("TRIP RESET"); break;
+        case CMD_RESET_TRIP_B: resetTripB(); showToast("TRIP B RESET"); break;
         default: break;
       }
       blelink::setStatus(storage::mounted(), sh.sensorOk, sh.levelSet, sh.leveling);
@@ -229,15 +235,14 @@ static void sensorTask(void*) {
         // the car's own speed: no GPS jitter, works in tunnels
         float kmh = carKmh;
         sh.speedKmh = kmh;
-        sh.tripKm += kmh * navDt / 3600.f;
+        const double km = kmh * navDt / 3600.;
+        sh.tripKm += km;
+        sh.tripBKm += km;
         if (kmh > sh.maxKmh) sh.maxKmh = kmh;
       } else if (sh.nav == NAV_LIVE) {
         float kmh = f.speedMs * 3.6f;
         if (kmh < TRIP_MIN_KMH) kmh = 0;
-        sh.speedKmh = kmh;
-        sh.tripKm += kmh * navDt / 3600.f;
-        if (f.seq != lastNavSeq && f.speedAccMs >= 0 && f.speedAccMs * 3.6f < MAX_SPEED_ACC_KMH && kmh > sh.maxKmh)
-          sh.maxKmh = kmh;
+        sh.speedKmh = kmh;   // shown, but trips and max count the car's speed only
       } else {
         sh.speedKmh = -1;
       }
@@ -284,7 +289,6 @@ static void sensorTask(void*) {
 
       if (fresh && f.courseValid) sh.courseDeg = f.courseDeg;
       else if (!fresh) sh.courseDeg = -1;   // keep last heading while stopped, drop it when data stops
-      lastNavSeq = f.seq;
 
       if (!sh.sensorOk) alarm = false;   // no alarm on stale angles
       if (cfg.buzzer) {
@@ -317,6 +321,7 @@ static void sensorTask(void*) {
       else if (c == 'r') resetPeaks();
       else if (c >= '0' && c < '0' + SCREEN_COUNT) sh.screen = c - '0';
       else if (c == 't') resetTrip();
+      else if (c == 'T') resetTripB();
       else if (c == 'i') {
         remote::Stats rs = remote::stats();
         Serial.printf("[remote] %s%s, %lu packets, %lu samples, %lu lost, %lu overflow\n",
@@ -325,8 +330,8 @@ static void sensorTask(void*) {
                       (unsigned long)rs.overflow);
       }
       else if (c == 'v')
-        Serial.printf("[state] screen %u, trip %.2f km, max %.0f km/h, fuel %.2f L over %.2f km, compared %.2f km\n",
-                      sh.screen, sh.tripKm, sh.maxKmh, sh.fuelL, sh.fuelKm, sh.cmpGpsKm);
+        Serial.printf("[state] screen %u, trip A %.2f km, max %.0f km/h, trip B %.2f km, fuel %.2f L over %.2f km, "
+                      "compared %.2f km\n", sh.screen, sh.tripKm, sh.maxKmh, sh.tripBKm, sh.fuelL, sh.fuelKm, sh.cmpGpsKm);
       else if (c == 's') storage::listFiles();
       else if (c == 'o') storage::printFile("obd.txt", 32 * 1024);
       else if (c == 'b') {   // "b" = end of the probe log, "b<KB>" = that many KB from its end
@@ -419,6 +424,7 @@ static void renderTask(void*) {
     st.speedKmh = sh.speedKmh;
     st.maxKmh = sh.maxKmh;
     st.tripKm = sh.tripKm;
+    st.tripBKm = sh.tripBKm;
     st.obdState = sh.obdState;
     // rpm arrives a few times a second: ease towards it so the rev needle sweeps
     st.gear = sh.gear;
@@ -428,7 +434,7 @@ static void renderTask(void*) {
     st.coolantC = sh.coolantC; st.volts = sh.volts;
     st.intakeC = sh.intakeC; st.loadPct = sh.loadPct;
     st.fuelLph = sh.fuelLph; st.fuelL100 = sh.fuelL100;
-    st.avgL100 = sh.fuelKm >= 1.f ? sh.fuelL / sh.fuelKm * 100.f : -999;
+    st.avgL100 = sh.fuelKm >= 1. ? sh.fuelL / sh.fuelKm * 100. : -999;
     st.obdKmh = sh.obdKmh; st.gpsKmh = sh.gpsKmh;
     st.cmpKm = sh.cmpGpsKm;
     {
@@ -482,7 +488,7 @@ static PersistState currentState() {
   PersistState p = saved;
   p.peakRollL = sh.peakRollL; p.peakRollR = sh.peakRollR;
   p.peakPitchUp = sh.peakPitchUp; p.peakPitchDn = sh.peakPitchDn;
-  p.maxKmh = sh.maxKmh; p.tripKm = sh.tripKm;
+  p.maxKmh = sh.maxKmh; p.tripKm = sh.tripKm; p.tripBKm = sh.tripBKm;
   p.fuelL = sh.fuelL; p.fuelKm = sh.fuelKm;
   p.screen = sh.screen;
   return p;
@@ -501,10 +507,11 @@ static void loadFromSd() {
   if (storage::loadState(saved)) {
     sh.peakRollL = saved.peakRollL; sh.peakRollR = saved.peakRollR;
     sh.peakPitchUp = saved.peakPitchUp; sh.peakPitchDn = saved.peakPitchDn;
-    sh.maxKmh = saved.maxKmh; sh.tripKm = saved.tripKm;
+    sh.maxKmh = saved.maxKmh; sh.tripKm = saved.tripKm; sh.tripBKm = saved.tripBKm;
     if (saved.screen < SCREEN_COUNT) sh.screen = saved.screen;
     sh.fuelL = saved.fuelL; sh.fuelKm = saved.fuelKm;
-    Serial.printf("[sd] state loaded: trip %.1f km, max %.0f km/h, screen %u\n", saved.tripKm, saved.maxKmh, saved.screen);
+    Serial.printf("[sd] state loaded: trip A %.1f km, trip B %.1f km, max %.0f km/h, screen %u\n", saved.tripKm,
+                  saved.tripBKm, saved.maxKmh, saved.screen);
   }
   if (cfg.log) {
     saved.logNo++;
@@ -529,7 +536,7 @@ static void storageTask(void*) {
     if (!logNoFree) { saved.logNo++; storage::saveState(saved); }
     logNoFree = false;
     storage::logOpen(saved.logNo,
-                     "t_s,pitch,roll,speed_kmh,speed_src,course,rpm,coolant_c,intake_c,load_pct,throttle_pct,obd_volts,maf_gs,fuel_lph,gear,selector\n");
+                     "t_s,pitch,roll,speed_kmh,speed_src,course,rpm,coolant_c,intake_c,load_pct,throttle_pct,obd_volts,maf_gs,fuel_lph,gear,selector,trip_a_km,trip_b_km\n");
   };
   updateLog();
   {
@@ -567,7 +574,8 @@ static void storageTask(void*) {
     bool quick = cur.peakRollL != saved.peakRollL || cur.peakRollR != saved.peakRollR ||
                  cur.peakPitchUp != saved.peakPitchUp || cur.peakPitchDn != saved.peakPitchDn ||
                  cur.screen != saved.screen;   // saved within 2 s
-    bool trip = cur.maxKmh != saved.maxKmh || cur.tripKm != saved.tripKm || cur.fuelL != saved.fuelL;
+    bool trip = cur.maxKmh != saved.maxKmh || cur.tripKm != saved.tripKm || cur.tripBKm != saved.tripBKm ||
+                cur.fuelL != saved.fuelL;
     if ((quick && now - lastSave >= 2000) || (trip && now - lastSave >= STATE_SAVE_S * 1000)) {
       if (storage::saveState(cur)) saved = cur;
       else Serial.println("[sd] state save FAILED");
@@ -578,7 +586,7 @@ static void storageTask(void*) {
       lastLog = now;
       obd::Data o = obd::latest();
       bool live = o.state == obd::OBD_LIVE;
-      char spd[8], crs[8], rpm[8], cool[8], intk[8], load[8], thr[8], volt[8], maf[8], fuel[8], gear[4], line[196];
+      char spd[8], crs[8], rpm[8], cool[8], intk[8], load[8], thr[8], volt[8], maf[8], fuel[8], gear[4], line[224];
       fmtOpt(spd, sizeof spd, sh.speedKmh >= 0, "%.0f", sh.speedKmh);
       fmtOpt(crs, sizeof crs, sh.courseDeg >= 0, "%.0f", sh.courseDeg);
       fmtOpt(rpm, sizeof rpm, live && obd::fresh(o.rpmMs), "%.0f", o.rpm);
@@ -595,8 +603,9 @@ static void storageTask(void*) {
       char pit[8], rol[8];   // empty while there is no sensor
       fmtOpt(pit, sizeof pit, sh.sensorOk, "%.1f", sh.pitch);
       fmtOpt(rol, sizeof rol, sh.sensorOk, "%.1f", sh.roll);
-      snprintf(line, sizeof line, "%.1f,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n", now * 1e-3f, pit, rol,
-               spd, src, crs, rpm, cool, intk, load, thr, volt, maf, fuel, gear, sel);
+      snprintf(line, sizeof line, "%.1f,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%.3f,%.3f\n", now * 1e-3f, pit,
+               rol, spd, src, crs, rpm, cool, intk, load, thr, volt, maf, fuel, gear, sel, (double)sh.tripKm,
+               (double)sh.tripBKm);
       storage::logWrite(line);
     }
     if (now - lastSync >= LOG_SYNC_S * 1000) { lastSync = now; storage::logSync(); }
