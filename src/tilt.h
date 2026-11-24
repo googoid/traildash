@@ -3,7 +3,8 @@
 
 // Inclinometer: pitch/roll from the measured gravity direction, heavily smoothed,
 // with the gyro used only short-term so real tilting shows up without lag (see
-// tilt.cpp). Accelerating and braking briefly show up as pitch — accepted by design.
+// tilt.cpp). Accelerating and braking are measured from the car's speed (setSpeed) and
+// removed; without a speed source they show up as pitch.
 //
 // Car frame: X forward, Y left, Z up.
 //
@@ -27,6 +28,10 @@ void update(const ImuSample& s, float dt);
 // Call reseed() when the sensor comes back after a gap (it may have been moved).
 void reseed();
 bool seeding();
+// Car speed (m/s) and millis() when it was received; call whenever a new reading arrives.
+// Its rate of change is the forward acceleration, which is taken out of the pitch.
+// `source` tells the speed sources apart (OBD, GPS): a change starts the estimate over.
+void setSpeed(float mps, uint32_t ms, uint8_t source);
 Attitude attitude();
 
 void startLevelCalibration();          // averages ~1 s of accel, then stores

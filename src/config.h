@@ -56,7 +56,7 @@
 #define REMOTE_FORWARD       "+x"    // remote sensor axis pointing (roughly) forward: +x -x +y -y +z -z
 #define REMOTE_STALE_MS      500     // no samples this long -> "NO SENSOR"
 
-// Tilt filter. Accelerating/braking briefly shows up as pitch; that is by design.
+// Tilt filter. Accelerating/braking is taken out of the pitch using the car's speed (OBD, else GPS).
 #define TILT_GYRO_CARRY      1       // 1 = gyro turns the reading instantly, accel keeps it true (recommended)
                                      // 0 = accel only; gyro just tells the filter when to follow faster
 #if TILT_GYRO_CARRY
@@ -77,6 +77,10 @@
 #define TILT_ADAPT_DEG       10.0f   // deviation where it is fully fast
 #define TILT_BUMP_G          0.15f   // |a| jumping more than this from its average = bump, sample ignored
 #define TILT_BUMP_HOLD_S     0.5f    // ...but never ignore for longer than this
+#define TILT_ACC_SPAN_MS     500     // forward accel = speed change over at least this long
+#define TILT_ACC_SMOOTH_S    0.15f   // smoothing of that acceleration
+#define TILT_ACC_DELAY_MS    500     // how late that acceleration is (OBD reply + span); accel is delayed to match
+#define TILT_ACC_GAP_MS      1500    // no speed reading this long -> no correction
 #define DISPLAY_HYST_DEG     0.3f    // whole-degree readout changes only this far past the .5 boundary
 
 // ---------------- board pins (do not change) ----------------

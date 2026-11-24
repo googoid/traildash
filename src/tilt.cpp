@@ -8,6 +8,7 @@
 // Signal chain (250 Hz):
 //   accel (remote IMU, MPU-6050 DLPF ~20 Hz)
 //   -> median of 5 per axis           removes single-sample spikes
+//   -> minus the car's own forward acceleration (from its speed, see setSpeed)
 //   -> bump gate                      |a| jumps away from its average -> hold the last value
 //   -> slow pull of the estimate towards it (calm numbers)
 //   -> rotate into the car frame      pitch / roll
@@ -58,6 +59,20 @@ static V3 gyroAvg = {0, 0, 0};           // gyro bias estimate (dps)
 static float gyroHold = 0;               // mode 0: gyro-based response, held briefly after rotation stops
 #endif
 static float bumpTime = 0;
+// forward acceleration from the speed readings (m/s^2)
+static constexpr int SPD_N = 8;
+static float spdV[SPD_N];
+static uint32_t spdT[SPD_N];
+static int spdI = 0, spdCount = 0;
+static float spdAge = 1e9f;              // s since the last reading
+static float accRaw = 0, accFwd = 0;
+// The acceleration from the speed lags the accelerometer, so the accelerometer is compared
+// with the estimate from as long ago, and the difference corrects the current estimate
+// (the gyro still turns the reading without delay).
+static constexpr int DLY_DECIM = 5;      // one entry per 5 samples (20 ms)
+static constexpr int DLY_N = TILT_ACC_DELAY_MS / (4 * DLY_DECIM) + 1;
+static V3 dlyA[DLY_N], dlyG[DLY_N];      // accelerometer, and the estimate at that time
+static int dlyI = 0, dlyK = 0;
 static Attitude att = {0, 0, 0, false};
 
 // level calibration accumulator
@@ -133,6 +148,31 @@ void reseed() {
   if (calBusy) { calSum = {0, 0, 0}; calN = 0; }   // a running level calibration starts over
 }
 
+void setSpeed(float mps, uint32_t ms, uint8_t source) {
+  static uint8_t lastSource = 0xFF;
+  int last = (spdI + SPD_N - 1) % SPD_N;
+  if (source != lastSource) { lastSource = source; spdCount = 0; }   // sources differ a little
+  if (spdCount && ms == spdT[last]) return;                          // same reading again
+  if (spdCount && ms - spdT[last] > TILT_ACC_GAP_MS) spdCount = 0;   // after a gap: start over
+  spdV[spdI] = mps;
+  spdT[spdI] = ms;
+  spdI = (spdI + 1) % SPD_N;
+  if (spdCount < SPD_N) spdCount++;
+  spdAge = 0;
+  // difference to the newest reading at least TILT_ACC_SPAN_MS old (quantised speed needs a span)
+  for (int k = 1; k < spdCount; k++) {
+    int j = (spdI + SPD_N - 1 - k) % SPD_N;
+    uint32_t span = ms - spdT[j];
+    if (span >= TILT_ACC_SPAN_MS || k == spdCount - 1) {
+      if (span >= TILT_ACC_SPAN_MS / 2) {
+        float a = (mps - spdV[j]) / (span * 1e-3f);
+        accRaw = a > 8 ? 8 : (a < -8 ? -8 : a);   // no car does more than ~0.8 g
+      }
+      break;
+    }
+  }
+}
+
 static inline float median5(float a, float b, float c, float d, float e) {
   // minimal sorting network for the middle element
   float t;
@@ -151,6 +191,7 @@ void update(const ImuSample& s, float dt) {
     if (++seedN < SEED_N) return;
     V3 g = scale(seedSum, 1.f / SEED_N);
     for (V3& m : med) m = g;
+    for (int k = 0; k < DLY_N; k++) dlyA[k] = dlyG[k] = g;
     gFast = gOut = g;
     magRef = len(g);
     if (!levelStored) buildMount(g);   // no reference yet: current orientation = level
@@ -193,6 +234,16 @@ void update(const ImuSample& s, float dt) {
           median5(med[0].y, med[1].y, med[2].y, med[3].y, med[4].y),
           median5(med[0].z, med[1].z, med[2].z, med[3].z, med[4].z)};
 
+  // ---- the car's own forward acceleration is not tilt ----
+  if (++dlyK >= DLY_DECIM) { dlyK = 0; dlyA[dlyI] = r; dlyG[dlyI] = gOut; dlyI = (dlyI + 1) % DLY_N; }
+  spdAge += dt;
+  const bool haveSpeed = spdAge < TILT_ACC_GAP_MS * 1e-3f;
+  if (!haveSpeed) accRaw = 0;                      // no speed: nothing to take out, no need to wait
+  accFwd += (accRaw - accFwd) * fminf(1.f, dt / TILT_ACC_SMOOTH_S);
+  V3 gThen = gOut;
+  if (haveSpeed) { r = dlyA[dlyI]; gThen = dlyG[dlyI]; }   // the oldest entries, ~TILT_ACC_DELAY_MS ago
+  r = sub(r, scale(mF, accFwd / 9.80665f));
+
   // ---- bump gate: a sudden change of |a| is a jolt, not a tilt ----
   float m = len(r);
   att.bump = fabsf(m - magRef) > TILT_BUMP_G;
@@ -205,13 +256,14 @@ void update(const ImuSample& s, float dt) {
 
   // ---- accelerometer pull (adaptive) ----
   gFast = lerp(gFast, r, fminf(1.f, dt / TILT_DETECT_S));
-  float diff = angleDeg(gFast, gOut);              // how far the real angle has moved away
+  float diff = angleDeg(gFast, gThen);              // how far the real angle has moved away
   att.adapt = clamp01((diff - TILT_ADAPT_MIN_DEG) / (TILT_ADAPT_DEG - TILT_ADAPT_MIN_DEG));
 #if !TILT_GYRO_CARRY
   att.adapt = fmaxf(att.adapt, gyroHold);
 #endif
   float tau = TILT_SMOOTH_S + (TILT_FAST_S - TILT_SMOOTH_S) * att.adapt;
-  gOut = lerp(gOut, r, fminf(1.f, dt / tau));
+  if (haveSpeed) tau = fmaxf(tau, 2e-3f * TILT_ACC_DELAY_MS);   // correcting from older data: not faster (would swing)
+  gOut = add(gOut, scale(sub(r, gThen), fminf(1.f, dt / tau)));
 
   computeAngles();
 }

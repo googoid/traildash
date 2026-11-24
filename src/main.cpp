@@ -231,6 +231,9 @@ static void sensorTask(void*) {
       else sh.nav = fresh && f.speedValid ? NAV_LIVE : NAV_NO_FIX;
       // the car's speed, corrected (speedometer / tyre size error, measured on the speed check screen)
       const float carKmh = od.speedKmh * (1.f + cfg.speedCorrPct * 0.01f);
+      // the tilt filter takes accelerating / braking out of the pitch (OBD: faster and steadier than GPS)
+      if (obdSpeed) tilt::setSpeed(carKmh / 3.6f, od.speedMs, 0);
+      else if (fresh && f.speedValid) tilt::setSpeed(f.speedMs, f.rxMs, 1);
       if (sh.nav == NAV_OBD) {
         // the car's own speed: no GPS jitter, works in tunnels
         float kmh = carKmh;
