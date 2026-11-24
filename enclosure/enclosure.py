@@ -65,6 +65,24 @@ BACK     = CAV_BACK + BACK_SKIN
 DEPTH    = BACK - FRONT
 
 
+def sector(r0, r1, a0, a1, d0, d1):
+    """Annular sector solid between angles a0..a1 (deg), depths d0..d1."""
+    n = 12
+    pts = [(r * math.cos(math.radians(a0 + (a1 - a0) * i / n)),
+            r * math.sin(math.radians(a0 + (a1 - a0) * i / n)))
+           for r, rng in ((r1, range(n + 1)), (r0, range(n, -1, -1))) for i in rng]
+    return cq.Workplane("XY").workplane(offset=d0).polyline(pts).close().extrude(d1 - d0)
+
+
+SNAP_POCKET_R = OUT_R - SNAP_CATCH_IN + 0.2 - SNAP_GAP   # 0.2 = insert bore clearance
+
+
+def snap_pocket(a):
+    """Pocket in the back edge for the insert's snap catch at angle a (deg)."""
+    half = math.degrees((SNAP_W / 2 + SNAP_GAP) / OUT_R)
+    return sector(SNAP_POCKET_R, OUT_R + 2, a - half, a + half, BACK - SNAP_DEPTH, BACK + 1)
+
+
 def ring_body():
     return (cq.Workplane("XY").workplane(offset=FRONT)
             .circle(OUT_R).extrude(DEPTH)
@@ -153,14 +171,7 @@ def build():
 
     # snap-catch pockets in the back edge (cluster insert)
     for a in SNAP_ANG:
-        half = math.degrees((SNAP_W / 2 + SNAP_GAP) / OUT_R)
-        r0 = OUT_R - SNAP_CATCH_IN + 0.2 - SNAP_GAP     # 0.2 = insert bore clearance
-        n = 12
-        pts = [(r * math.cos(math.radians(a - half + 2 * half * i / n)),
-                r * math.sin(math.radians(a - half + 2 * half * i / n)))
-               for r, rng in ((OUT_R + 2, range(n + 1)), (r0, range(n, -1, -1))) for i in rng]
-        body = body.cut(cq.Workplane("XY").workplane(offset=BACK - SNAP_DEPTH)
-                        .polyline(pts).close().extrude(SNAP_DEPTH + 1))
+        body = body.cut(snap_pocket(a))
 
     # anti-rotation dimples for the dash mount's locating pins
     for x in (-PIN_X, PIN_X):

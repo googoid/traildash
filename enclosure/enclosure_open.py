@@ -1,8 +1,8 @@
 """
 Open-back enclosure for the Waveshare ESP32-S3-Touch-LCD-2.8C (round 2.8", 95.86 mm glass).
 
-Same outside as enclosure.py (diameter, depth, back face), so it still snaps into
-cluster_insert.py, but with no mount: no 1/4"-20 nut, no back plate. The display
+Same outside as enclosure.py (diameter, depth, back face, snap pockets), so it
+still snaps into cluster_insert.py, but with no mount: no 1/4"-20 nut, no back plate. The display
 drops in face-up, the glass sits in the front pocket on a thin ledge, and four
 arms reach in from the side wall to the board's M2 standoffs; 4x M2x6 screws
 from the back pull the board (and so the glass) onto the ledge. Behind the
@@ -42,6 +42,9 @@ ARM_T      = 2.6                     # material under the screw head (M2x6 -> ~3
 BOSS_R     = 3.4
 SCREW_D    = E.SCREW_D
 HEAD_D     = E.SCREW_HEAD_D
+SNAP_PAD_T = 1.6                     # wall left inside each snap pocket
+SNAP_PAD_SIDE = 1.5                  # pad reaches this far past the pocket's sides
+SNAP_PAD_BELOW = 2.0                 # ... and in front of its floor
 # arm direction from each standoff to the wall (deg), clear of USB / buttons
 ARM_DIR    = [160, 20, -110, -70]
 
@@ -87,6 +90,14 @@ def build():
                         .center(sx, sy).circle(SCREW_D / 2).extrude(BACK - ARM_FRONT + 2))
         body = body.cut(cq.Workplane("XY").workplane(offset=ARM_FRONT + ARM_T)
                         .center(sx, sy).circle(HEAD_D / 2).extrude(BACK))
+
+    # snap-catch pockets for the cluster insert (as in enclosure.py); the rear wall
+    # is thinner than the pocket is deep, so a pad inside the wall carries each one
+    for a in E.SNAP_ANG:
+        half = math.degrees((E.SNAP_W / 2 + E.SNAP_GAP + SNAP_PAD_SIDE) / OUT_R)
+        body = body.union(E.sector(E.SNAP_POCKET_R - SNAP_PAD_T, OUT_R - 0.5, a - half, a + half,
+                                   BACK - E.SNAP_DEPTH - SNAP_PAD_BELOW, BACK))
+        body = body.cut(E.snap_pocket(a))
 
     # LCD flex tail wraps around the bottom edge of the LCD: notch in the ledge
     body = body.cut(E.flex_notch(LEDGE_T + 6))
