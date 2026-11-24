@@ -19,7 +19,8 @@ the insert pushes into the speedometer opening of the cluster bezel:
   don't press on its rounded front edge (that pushed the prototypes back out).
   The sleeve runs on past the snap hooks to carry them (they take openings ~123 to ~133 mm, so the photo estimate
   of the opening does not have to be exact)
-- three snap hooks hold the enclosure; push it in from the back until it clicks,
+- three snap hooks hold the enclosure; their catches sit in pockets in its back
+  edge, flush with the back (that also keys its rotation). Push it in from the back until it clicks,
   spread the hooks to take it out (needed for BOOT/RST and the battery switch).
   The hooks bend outward while the enclosure goes in, so no spring may run over
   a hook (on the first prototype that snapped the two lower springs off);
@@ -72,11 +73,12 @@ LIP_T      = 1.2                       # lip thickness in front of the enclosure
 FLANGE_T   = 2.6
 LENS_DEPTH = 40.0                      # bezel face -> cluster lens, shallowest (measured)
 LENS_GAP   = 5.0                       # keep the insert this far off the lens
-HOOK_H     = 1.8                       # catch height (ramp length)
-# The display sits as deep as the lens allows: the hook ends (just behind the
+HOOK_H     = E.SNAP_CATCH_H            # catch height (ramp length)
+HOOK_END   = E.BACK                    # catches sit in the enclosure's back pockets, flush
+# The display sits as deep as the lens allows: the hook ends (flush with the
 # enclosure back) come to LENS_GAP in front of the lens; the lip becomes a
 # tunnel from the flange to the glass.
-RECESS     = LENS_DEPTH - LENS_GAP - (E.BACK + 0.15 + HOOK_H - (E.FRONT - LIP_T + FLANGE_T))
+RECESS     = LENS_DEPTH - LENS_GAP - (HOOK_END - (E.FRONT - LIP_T + FLANGE_T))
 FRONT      = E.FRONT - LIP_T - RECESS  # insert front face (d)
 FLANGE_BACK = FRONT + FLANGE_T
 
@@ -92,13 +94,12 @@ SPRINGS    = [(-29, 31, 12.0), (6, 32, 15.0), (42, 36, 18.0),
 LEAD       = 1.0                       # lead-in: tip radius drops 1 mm per mm depth
 
 # snap hooks
-HOOK_ANG   = [90, -63, -117]      # lower two beside the flat shoe, away from springs
-HOOK_W     = 11.0                      # arm width (mm along the tube)
+HOOK_ANG   = E.SNAP_ANG                # lower two beside the flat shoe, away from springs
+HOOK_W     = E.SNAP_W                  # arm width (mm along the tube)
 HOOK_SLOT  = 1.2
-HOOK_FROM  = E.FRONT + 2.4             # arm free length (~16.7 mm) starts here
-HOOK_CATCH = E.BACK + 0.15             # catch face just behind enclosure back
-HOOK_IN    = 2.0                       # catch protrudes this far inward
-HOOK_END   = HOOK_CATCH + HOOK_H
+HOOK_FROM  = HOOK_END - 16.65           # arm free length starts here
+HOOK_CATCH = HOOK_END - HOOK_H          # catch face just behind the pocket floor
+HOOK_IN    = E.SNAP_CATCH_IN           # catch protrudes this far inward
 # the sleeve runs on past the hooks to carry the deep springs
 TUBE_END   = max(HOOK_END, FLANGE_BACK + max(s[2] for s in SPRINGS) + SPR_H + 0.5)
 

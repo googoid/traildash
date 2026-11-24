@@ -49,6 +49,14 @@ NUT_FLOOR    = 2.0
 USB_W, USB_H = 13.5, 8.0     # plug overmold opening
 PIN_D        = 2.0           # paper-clip holes for BOOT / RST
 PIN_X, DIMPLE_D, DIMPLE_H = 13.0, 4.5, 2.2   # mount locating-pin dimples (back)
+# pockets in the back edge for the cluster insert's snap catches (cluster_insert.py):
+# the catches sit in them flush with the back, and they key the enclosure's rotation
+SNAP_ANG     = [90, -63, -117]   # deg, about the display centre (as seen from the back)
+SNAP_W       = 11.0              # hook arm width (mm along the wall)
+SNAP_CATCH_H = 1.8               # catch height along the depth
+SNAP_CATCH_IN = 2.0              # catch reaches this far in from the bore
+SNAP_GAP     = 0.5               # pocket clearance around the catch (sides, inside)
+SNAP_DEPTH   = SNAP_CATCH_H + 0.15   # pocket depth from the back face
 
 POCKET_R = GLASS_R + FIT
 OUT_R    = POCKET_R + WALL
@@ -142,6 +150,17 @@ def build():
         body = body.cut(cq.Workplane("XY").workplane(offset=CAV_BACK - 1)
                         .center(i * 3.2 - 6.4, 30).slot2D(10, 1.6, 90)
                         .extrude(BACK_SKIN + 2))
+
+    # snap-catch pockets in the back edge (cluster insert)
+    for a in SNAP_ANG:
+        half = math.degrees((SNAP_W / 2 + SNAP_GAP) / OUT_R)
+        r0 = OUT_R - SNAP_CATCH_IN + 0.2 - SNAP_GAP     # 0.2 = insert bore clearance
+        n = 12
+        pts = [(r * math.cos(math.radians(a - half + 2 * half * i / n)),
+                r * math.sin(math.radians(a - half + 2 * half * i / n)))
+               for r, rng in ((OUT_R + 2, range(n + 1)), (r0, range(n, -1, -1))) for i in rng]
+        body = body.cut(cq.Workplane("XY").workplane(offset=BACK - SNAP_DEPTH)
+                        .polyline(pts).close().extrude(SNAP_DEPTH + 1))
 
     # anti-rotation dimples for the dash mount's locating pins
     for x in (-PIN_X, PIN_X):
