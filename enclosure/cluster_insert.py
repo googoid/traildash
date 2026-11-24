@@ -10,7 +10,8 @@ the insert pushes into the speedometer opening of the cluster bezel:
   rotate the roll reading). Its flat edge is only ~47 mm below the circle
   centre, less than the display radius, so the display sits SHIFT mm above
   the centre of the opening
-- front flange (same circle-with-flat shape) sits on the silver bezel ring and
+- front flange sits on the silver bezel ring (outer edge a circle about the display
+  centre so the visible ring is even, flat at the bottom) and
   hides the gap; its lip covers the enclosure rim, so only the glass shows
 - six spiral leaf springs on the round part push the insert down onto the flat
   and centre it sideways. They sit deep in the opening (12-29 mm behind the
@@ -29,7 +30,8 @@ the insert pushes into the speedometer opening of the cluster bezel:
 
 Opening measured from a photo with a tape measure across the bezel:
 silver-ring inner edge ~128 mm across, flat bottom ~47 mm below its centre,
-ring outer ~136 mm, >= 40 mm deep to the cluster lens. The insert uses ~20 mm.
+ring outer ~136 mm, >= 40 mm deep to the cluster lens. The insert uses 35 mm:
+the display sits as deep as that allows (RECESS), seen through a tunnel.
 
 Coordinates are the enclosure's: x, y viewed from the BACK, d (= z) depth from
 the glass front, positive toward the back. The display centre is the origin;
@@ -48,6 +50,13 @@ import enclosure as E
 OPEN_D     = 128.0     # bezel opening (round part), estimated
 FLAT_Y     = 47.2      # opening centre -> flat bottom edge, estimated
 FLANGE_OVER = 3.0      # flange overlaps the bezel by this much all round
+# The display sits SHIFT above the opening centre, so a flange that follows the
+# opening shows a ring that is thin at the top and wide at the sides. Its outer
+# edge is a circle about the DISPLAY centre instead (same ring width all over the
+# top); the lower corners still follow the opening to cover it. On the photo the
+# silver bezel reaches ~65 mm above the display centre and ~69 mm to the sides.
+RING_R     = 65.0       # ~1.2 mm overlap onto the bezel at the sides
+RING_BLEND = 6.0       # radius of the fillet where the ring meets the opening shape
 
 # ---------------- insert ----------------
 FIT        = 0.20                      # radial clearance around the enclosure
@@ -61,8 +70,15 @@ SHOE_Y     = OY - FLAT_Y + FLAT_CLEAR  # insert bottom face (y)
 SHOE_W     = 30.0                      # width of the flat bottom pad (between the lower hooks)
 LIP_IN_R   = E.POCKET_R + 0.3          # front lip covers the enclosure rim only
 LIP_T      = 1.2                       # lip thickness in front of the enclosure
-FRONT      = E.FRONT - LIP_T           # insert front face (d)
 FLANGE_T   = 2.6
+LENS_DEPTH = 40.0                      # bezel face -> cluster lens, shallowest (measured)
+LENS_GAP   = 5.0                       # keep the insert this far off the lens
+HOOK_H     = 1.8                       # catch height (ramp length)
+# The display sits as deep as the lens allows: the hook ends (just behind the
+# enclosure back) come to LENS_GAP in front of the lens; the lip becomes a
+# tunnel from the flange to the glass.
+RECESS     = LENS_DEPTH - LENS_GAP - (E.BACK + 0.15 + HOOK_H - (E.FRONT - LIP_T + FLANGE_T))
+FRONT      = E.FRONT - LIP_T - RECESS  # insert front face (d)
 FLANGE_BACK = FRONT + FLANGE_T
 
 # springs (root angle about the display centre, sweep; + = counter-clockwise)
@@ -80,14 +96,12 @@ LEAD       = 1.0                       # lead-in: tip radius drops 1 mm per mm d
 HOOK_ANG   = [90, -63, -117]      # lower two beside the flat shoe, away from springs
 HOOK_W     = 11.0                      # arm width (mm along the tube)
 HOOK_SLOT  = 1.2
-HOOK_FROM  = FLANGE_BACK + 1.0         # arm free length starts here
+HOOK_FROM  = E.FRONT + 2.4             # arm free length (~16.7 mm) starts here
 HOOK_CATCH = E.BACK + 0.15             # catch face just behind enclosure back
 HOOK_IN    = 2.0                       # catch protrudes this far inward
-HOOK_H     = 1.8                       # catch height (ramp length)
 HOOK_END   = HOOK_CATCH + HOOK_H
 # the sleeve runs on past the hooks to carry the deep springs
 TUBE_END   = max(HOOK_END, FLANGE_BACK + max(s[2] for s in SPRINGS) + SPR_H + 0.5)
-LENS_DEPTH = 40.0                      # bezel face -> cluster lens, shallowest (measured)
 
 # USB windows (open toward the back so the cable can leave that way)
 USB_ANG    = {s: math.degrees(math.atan2(y, x)) for x, y, s in E.USB_MOUTH}
@@ -170,9 +184,23 @@ def hook(ang):
     return cut, catch
 
 
+def flange():
+    """Circle RING_R about the display centre, joined to the opening shape grown by
+    FLANGE_OVER (which sticks out at the lower corners), flat at the bottom; the
+    inside corners where the two outlines meet are rounded off."""
+    flat = OY - FLAT_Y - FLANGE_OVER
+    ring = (cq.Workplane("XY").workplane(offset=FRONT).circle(RING_R).extrude(FLANGE_T)
+            .intersect(cq.Workplane("XY").workplane(offset=FRONT - 1)
+                       .center(0, flat + 200).rect(400, 400).extrude(FLANGE_T + 2)))
+    shape = ring.union(d_shape(OPEN_D / 2 + FLANGE_OVER, flat, FRONT, FLANGE_BACK))
+    face = shape.faces("<Z").val()
+    outline = face.outerWire().offset2D(RING_BLEND, "arc")[0].offset2D(-RING_BLEND, "arc")[0]
+    return cq.Workplane("XY").add(cq.Solid.extrudeLinear(cq.Face.makeFromWires(outline),
+                                                         cq.Vector(0, 0, FLANGE_T)))
+
+
 def build():
-    # flange: opening shape grown by FLANGE_OVER, front outer edge chamfered
-    body = d_shape(OPEN_D / 2 + FLANGE_OVER, OY - FLAT_Y - FLANGE_OVER, FRONT, FLANGE_BACK)
+    body = flange()
     body = body.faces("<Z").edges().chamfer(1.0)    # lip hole is cut after this
     body = body.cut(cq.Workplane("XY").workplane(offset=FRONT - 1).circle(LIP_IN_R).extrude(FLANGE_T + 2))
 
@@ -185,6 +213,9 @@ def build():
     # bore (lip stays only in front of the enclosure)
     body = body.cut(cq.Workplane("XY").workplane(offset=E.FRONT)
                     .circle(BORE_R).extrude(TUBE_END - E.FRONT + 1))
+    # tunnel from the flange to the glass (the shoe runs past it)
+    body = body.cut(cq.Workplane("XY").workplane(offset=FRONT - 1)
+                    .circle(LIP_IN_R).extrude(E.FRONT - FRONT + 2))
 
     for sp in SPRINGS:
         body = body.union(spring(*sp))
@@ -221,8 +252,8 @@ def check(body):
         zone = sector(TUBE_R + 0.05, TUBE_R + HOOK_IN + 1.5, ang - half, ang + half, HOOK_FROM, TUBE_END)
         hit += springs.val().intersect(zone.val()).Volume()
     gap = LENS_DEPTH - (TUBE_END - FLANGE_BACK)
-    print(f"clearance to the cluster lens: {gap:.1f} mm", "OK" if gap >= 5 else "TOO DEEP")
-    if gap < 5:
+    print(f"clearance to the cluster lens: {gap:.1f} mm", "OK" if gap >= LENS_GAP - 1e-6 else "TOO DEEP")
+    if gap < LENS_GAP - 1e-6:
         raise SystemExit("insert reaches too close to the lens")
     print("springs clear of hook flex zones:", "OK" if hit < 1e-3 else f"NO ({hit:.1f} mm3)")
     if hit >= 1e-3:
