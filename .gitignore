@@ -8,3 +8,4 @@
 preview/*.bmp
 preview/preview_bin
 xcuserdata/
+__pycache__/
