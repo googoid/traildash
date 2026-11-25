@@ -21,6 +21,14 @@ bool displayBegin();          // ST7701 + RGB panel (double buffered, PSRAM)
 typedef void (*StripFn)(uint16_t* buf, int y0, int rows, void* ctx);
 typedef uint32_t (*HashFn)(int y0, int rows, void* ctx);
 int drawFrame(const uint16_t* bg, StripFn fn, HashFn hash, void* ctx);   // returns strips redrawn
+// Same, into any frame-sized PSRAM buffer (from allocFrame), every strip, not shown.
+void drawFrameTo(uint16_t* dst, const uint16_t* bg, StripFn fn, void* ctx);
+// Screen-change slide: compose the next frame from two full-frame images by DMA only (no
+// drawing, ~27 ms). Columns [0, 480-dx) show a shifted left by dx, the rest b's first dx columns.
+void slideFrame(const uint16_t* a, const uint16_t* b, int dx);
+void snapshotFront(uint16_t* dst);   // copy the frame on screen now (by DMA)
+uint16_t* allocFrame();              // frame-sized PSRAM buffer that only DMA touches
+void setPanelClock(uint32_t hz);     // pixel clock; LCD_PCLK_HZ is the normal one
 void present();               // queue the composed frame (non-blocking; next drawFrame waits)
 void waitFrame();
 void rowParityCheck(int x0, int y0, int x1, int y1, float& even, float& odd);   // diagnostics             // block until the last presented frame is on screen

@@ -28,6 +28,7 @@ The project is under git (branch `main`). Work like this:
 | Action | Effect |
 |---|---|
 | Tap | Next screen: speed → engine → inclinometer → peaks → speed check. The screen shown is remembered across power-ups (SD card). |
+| Swipe left / right | Next / previous screen (it slides in) |
 | Hold 2 s | **Set level** — park on flat ground first. The screen blinks off briefly while it is saved. |
 | Hold 2 s on the speed screen | Reset max speed and trip (A) |
 | Hold 2 s on the engine screen | Reset trip B and average fuel use |
@@ -149,7 +150,9 @@ Without a card reader, over USB serial: `s` lists the files, `o` prints the end 
 - `gfx.cpp` — small antialiased vector renderer (polygons, arcs, gradients, dithering, smooth fonts).
 - `board.cpp` — ST7701 RGB panel with two PSRAM frame buffers. Frames are drawn in 16-row strips in
   internal SRAM and moved to/from PSRAM by GDMA (the CPU path to PSRAM is too slow); strips whose
-  content didn't change are skipped.
+  content didn't change are skipped. A screen change slides: the old frame and the new screen are
+  frozen in PSRAM and each slide frame is put together by DMA alone (~27 ms, PSRAM-bandwidth bound);
+  the panel runs at 60 Hz meanwhile, so every 2nd refresh = 30 fps (at its normal 50 Hz: 25).
 - Flash is never accessed while the display runs (the panel interrupt reads PSRAM, which is
   unavailable during flash operations) — without an SD card the panel is stopped for a moment when the
   level reference is saved. The SD card (`storage.cpp`, 1-bit SDMMC on the panel's init-SPI pins, which

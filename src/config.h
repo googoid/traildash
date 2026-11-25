@@ -15,6 +15,10 @@
 
 #define LONG_PRESS_MS        2000    // hold to set "level"
 #define DOUBLE_TAP_MS        350     // double-tap resets peak values
+#define SWIPE_START_PX       25      // finger moved this far sideways: a swipe (no tap / hold)
+#define SWIPE_MIN_PX         60      // released at least this far: change screen (left = next)
+#define SLIDE_MS             300     // screen change slide animation
+#define SLIDE_HZ             60      // panel refresh during the slide: 30 fps (50 Hz would be 25)
 
 // SD card
 #define LOG_ENABLED          1       // drive log CSV, one file per power-up

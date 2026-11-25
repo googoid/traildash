@@ -41,6 +41,7 @@ struct Shared {
   volatile float fps = 0;
   volatile bool testPattern = false;
   volatile bool fbCheck = false;
+  volatile int8_t slideDir = 0;     // set with a screen change: render task slides +1 next, -1 previous
   volatile bool sensorOk = false;    // remote IMU live and the filter seeded
   // GPS (from the phone)
   volatile uint8_t nav = NAV_NO_PHONE;
@@ -76,7 +77,12 @@ static void resetPeaks() {
 static void resetTrip() { sh.maxKmh = 0; sh.tripKm = 0; }
 static void resetTripB() { sh.tripBKm = 0; sh.fuelL = 0; sh.fuelKm = 0; }
 
-static void nextScreen() { sh.screen = (sh.screen + 1) % SCREEN_COUNT; }
+// dir +1 next, -1 previous; the render task slides the new screen in from that side
+static void changeScreen(int dir) {
+  sh.slideDir = dir;   // before the screen: the render task reads the screen first
+  sh.screen = (sh.screen + SCREEN_COUNT + dir) % SCREEN_COUNT;
+}
+static void nextScreen() { changeScreen(1); }
 
 static void startLevel() {
   if (tilt::levelCalibrationBusy()) return;
@@ -87,15 +93,24 @@ static void startLevel() {
 
 // ------------------------------------------------------------------ gestures
 struct PressTracker {
-  bool down = false, longFired = false;
+  bool down = false, longFired = false, swiping = false;
   uint32_t t0 = 0;
+  int x0 = 0, y0 = 0, lastX = 0;
   uint32_t pendingTapAt = 0;   // single tap waiting for a possible second tap
 
-  // returns hold progress 0..1
-  float update(bool isDown, uint32_t now, bool allowDoubleTap) {
+  // returns hold progress 0..1. canSwipe: x/y are real touch coordinates
+  float update(bool isDown, int x, int y, uint32_t now, bool allowDoubleTap, bool canSwipe) {
     float progress = 0;
-    if (isDown && !down) { down = true; longFired = false; t0 = now; }
-    if (isDown && down) {
+    if (isDown && !down) { down = true; longFired = false; swiping = false; t0 = now; x0 = x; y0 = y; }
+    if (isDown && down && canSwipe) {
+      lastX = x;
+      const int dx = x - x0, dy = y - y0;
+      if (!swiping && !longFired && abs(dx) >= SWIPE_START_PX && abs(dx) > abs(dy)) {
+        swiping = true;   // no tap, double-tap or hold from this touch
+        if (pendingTapAt) { pendingTapAt = 0; nextScreen(); }   // the tap before it still counts
+      }
+    }
+    if (isDown && down && !swiping) {
       uint32_t held = now - t0;
       if (held > 350 && !longFired) {
         progress = (float)(held - 350) / (LONG_PRESS_MS - 350);
@@ -110,7 +125,10 @@ struct PressTracker {
     }
     if (!isDown && down) {
       down = false;
-      if (!longFired && now - t0 < 350) {
+      if (swiping) {   // finger left = next screen (it comes in from the right)
+        const int dx = lastX - x0;   // the release report has no position
+        if (abs(dx) >= SWIPE_MIN_PX) changeScreen(dx < 0 ? 1 : -1);
+      } else if (!longFired && now - t0 < 350) {
         if (!allowDoubleTap) {
           nextScreen();
         } else if (pendingTapAt && now - pendingTapAt < DOUBLE_TAP_MS) {
@@ -201,8 +219,8 @@ static void sensorTask(void*) {
     if (++n % 5 == 0) {
       uint32_t now = millis();
       TouchPoint tp = touch::read();
-      float hp = touchPress.update(tp.down, now, true);
-      float hb = btnPress.update(digitalRead(PIN_BOOT_BTN) == LOW, now, false);
+      float hp = touchPress.update(tp.down, tp.x, tp.y, now, true, true);
+      float hb = btnPress.update(digitalRead(PIN_BOOT_BTN) == LOW, 0, 0, now, false, false);
       sh.holdProgress = fmaxf(hp, hb);
 
       // phone app (settings screen): actions, and the status it shows
@@ -322,7 +340,7 @@ static void sensorTask(void*) {
       else if (c == 'f') sh.fbCheck = true;
       else if (c == 'l') startLevel();
       else if (c == 'r') resetPeaks();
-      else if (c >= '0' && c < '0' + SCREEN_COUNT) sh.screen = c - '0';
+      else if (c >= '0' && c < '0' + SCREEN_COUNT) { sh.slideDir = 0; sh.screen = c - '0'; }
       else if (c == 't') resetTrip();
       else if (c == 'T') resetTripB();
       else if (c == 'i') {
@@ -372,6 +390,49 @@ static void stripCb(uint16_t* buf, int y0, int rows, void* ctx) {
 static uint32_t hashCb(int y0, int rows, void* ctx) {
   return ui::stripHash(y0, rows, *(const UiState*)ctx);
 }
+// ------------------------------------------------------------------ screen change slide
+// The old screen (copied from the frame on screen) and the new one (drawn once) are frozen
+// snapshots in PSRAM; the slide between them is put together by DMA alone, ~27 ms a frame.
+// A frame is shown at a panel refresh, so the panel runs at SLIDE_HZ meanwhile: every 2nd
+// refresh = 30 fps (at the normal 50 Hz it would be 25). ~SLIDE_MS + 40 ms, then live again.
+static uint16_t *slideOld = nullptr, *slideNew = nullptr;   // 2 x 450 KB PSRAM, kept
+
+static void slideScreens(UiState& st, int dir) {
+  if (!slideOld) slideOld = board::allocFrame();
+  if (!slideNew) slideNew = board::allocFrame();
+  if (!slideOld || !slideNew) return;   // no PSRAM: plain switch
+  // same blanking, so the refresh rate scales with the pixel clock; the snapshots below
+  // take ~40 ms, which covers the switch-over frame
+  board::setPanelClock((uint32_t)((uint64_t)LCD_PCLK_HZ * SLIDE_HZ / 50));
+  board::snapshotFront(slideOld);
+  ui::prepare(st);
+  board::drawFrameTo(slideNew, ui::background(st), stripCb, &st);
+  // dx = how far the left image has moved out: next = old|new moving left, previous = new|old moving right
+  const uint16_t* a = dir > 0 ? slideOld : slideNew;
+  const uint16_t* b = dir > 0 ? slideNew : slideOld;
+  const uint32_t t0 = micros();
+  int frames = 0;
+  uint32_t gapMax = 0, prev = 0;
+  for (;;) {
+    float t = fminf(1.f, (micros() - t0) * 1e-3f / SLIDE_MS);
+    float e = 1.f - (1.f - t) * (1.f - t) * (1.f - t);   // ease-out cubic
+    int dx = (int)lroundf(480.f * (dir > 0 ? e : 1.f - e));
+    board::waitFrame();
+    uint32_t now = micros();
+    if (prev && now - prev > gapMax) gapMax = now - prev;
+    prev = now;
+    board::slideFrame(a, b, dx);
+    board::present();
+    frames++;
+    if (t >= 1.f) break;
+  }
+  board::waitFrame();
+  board::setPanelClock(LCD_PCLK_HZ);
+  if (sh.debug)
+    Serial.printf("[slide] %d frames in %lu ms, longest gap %.1f ms\n", frames,
+                  (unsigned long)((micros() - t0) / 1000), gapMax * 1e-3f);
+}
+
 // Whole-degree readout with hysteresis: the shown value only moves once the
 // angle is clearly past the rounding boundary, so the number never flickers.
 static float holdDeg(float shown, float v) {
@@ -392,6 +453,7 @@ static void saveLevel() {
 
 static void renderTask(void*) {
   bool backlightOff = true;    // setup() leaves it off after the boot badge
+  int shownScreen = -1;        // screen of the frame on display
   uint8_t backlight = 0;       // level set now (follows cfg.backlight, changed in the phone app)
   UiState st;
   uint32_t last = micros();
@@ -457,6 +519,14 @@ static void renderTask(void*) {
       st.courseDeg = fmodf(c + 360.f, 360.f);
     }
 
+    // screen changed by a tap / swipe / the button: slide the new one in
+    // (serial and power-up changes come without a direction: plain switch)
+    if (st.screen != shownScreen) {
+      const int dir = sh.slideDir;
+      sh.slideDir = 0;
+      if (dir && shownScreen >= 0 && !backlightOff && !st.testPattern) slideScreens(st, dir);
+      shownScreen = st.screen;
+    }
     ui::prepare(st);
     board::drawFrame(ui::background(st), stripCb, hashCb, &st);
     board::present();

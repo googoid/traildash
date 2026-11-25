@@ -204,10 +204,12 @@ static void st7701Init() {
 struct DmaPair {
   gdma_channel_handle_t tx = nullptr, rx = nullptr;
   gdma_link_list_handle_t ltx = nullptr, lrx = nullptr;
+  gdma_link_list_handle_t lgather = nullptr;   // slide test: row segments at any 4-byte offset
   SemaphoreHandle_t done = nullptr;
   volatile bool busy = false;
 };
 static DmaPair dmaIn, dmaOut;   // PSRAM->SRAM (backgrounds), SRAM->PSRAM (frames)
+static constexpr int GATHER_ROWS = 16;   // slide test: rows per DMA transfer (= one strip)
 
 static bool IRAM_ATTR onDmaEof(gdma_channel_handle_t, gdma_event_data_t*, void* arg) {
   DmaPair* p = (DmaPair*)arg;
@@ -234,7 +236,7 @@ static bool dmaInit(DmaPair& p) {
   gdma_connect(p.rx, trig);
   gdma_connect(p.tx, trig);
   gdma_transfer_config_t t = {};
-  t.max_data_burst_size = 32;
+  t.max_data_burst_size = 32;   // 64 is faster for whole strips, but the slide's row gather then times out
   t.access_ext_mem = true;
   gdma_config_transfer(p.tx, &t);
   gdma_config_transfer(p.rx, &t);
@@ -252,6 +254,10 @@ static bool dmaInit(DmaPair& p) {
   lc.flags.check_owner = 1;
   if (gdma_new_link_list(&lc, &p.ltx) != ESP_OK) return false;
   if (gdma_new_link_list(&lc, &p.lrx) != ESP_OK) return false;
+  gdma_link_list_config_t gc = lc;
+  gc.num_items = 2 * GATHER_ROWS;   // 2 segments per row
+  gc.buffer_alignment = 4;          // segments start mid-row
+  if (gdma_new_link_list(&gc, &p.lgather) != ESP_OK) return false;
 
   p.done = xSemaphoreCreateBinary();
   gdma_rx_event_callbacks_t cbs = {};
@@ -384,16 +390,8 @@ static void waitFree() {
   presentPending = false;
 }
 
-int drawFrame(const uint16_t* bg, StripFn fn, HashFn hashFn, void* ctx) {
-  const int n = 480 / STRIP_ROWS;
-  int dirty[n], nd = 0;
-  uint32_t hs[n];
-  for (int k = 0; k < n; k++) {
-    hs[k] = hashFn ? hashFn(k * STRIP_ROWS, STRIP_ROWS, ctx) : 0;
-    if (!hashFn || !hashValid[backIdx] || hs[k] != lastHash[backIdx][k]) dirty[nd++] = k;
-  }
-  waitFree();
-  uint16_t* fb = fbs[backIdx];
+// Compose strips `dirty[0..nd)` into frame buffer `fb`.
+static void compose(uint16_t* fb, const uint16_t* bg, StripFn fn, void* ctx, const int* dirty, int nd) {
   // 3 SRAM strips rotate: one receiving its background, one being drawn, one being sent out.
   if (bg && nd) dmaStart(dmaIn, strips[0], bg + dirty[0] * STRIP_ROWS * 480, STRIP_BYTES);
   for (int i = 0; i < nd; i++) {
@@ -407,9 +405,87 @@ int drawFrame(const uint16_t* bg, StripFn fn, HashFn hashFn, void* ctx) {
     dmaStart(dmaOut, fb + k * STRIP_ROWS * 480, cur, STRIP_BYTES);
   }
   dmaWait(dmaOut);
+}
+
+int drawFrame(const uint16_t* bg, StripFn fn, HashFn hashFn, void* ctx) {
+  const int n = 480 / STRIP_ROWS;
+  int dirty[n], nd = 0;
+  uint32_t hs[n];
+  for (int k = 0; k < n; k++) {
+    hs[k] = hashFn ? hashFn(k * STRIP_ROWS, STRIP_ROWS, ctx) : 0;
+    if (!hashFn || !hashValid[backIdx] || hs[k] != lastHash[backIdx][k]) dirty[nd++] = k;
+  }
+  waitFree();
+  compose(fbs[backIdx], bg, fn, ctx, dirty, nd);
   memcpy(lastHash[backIdx], hs, sizeof hs);
   hashValid[backIdx] = hashFn != nullptr;
   return nd;
+}
+
+void drawFrameTo(uint16_t* dst, const uint16_t* bg, StripFn fn, void* ctx) {
+  const int n = 480 / STRIP_ROWS;
+  int all[n];
+  for (int k = 0; k < n; k++) all[k] = k;
+  compose(dst, bg, fn, ctx, all, n);
+}
+
+// One DMA transfer: rows [y0, y0+GATHER_ROWS) of a slide frame into fb, gathered from a and b.
+static void slideStart(DmaPair& p, uint16_t* fb, const uint16_t* a, const uint16_t* b, int dx, int y0) {
+  gdma_buffer_mount_config_t seg[2 * GATHER_ROWS] = {};
+  int n = 0;
+  for (int y = y0; y < y0 + GATHER_ROWS; y++) {
+    if (dx < 480) { seg[n].buffer = (void*)(a + y * 480 + dx); seg[n].length = (480 - dx) * 2; n++; }
+    if (dx > 0)   { seg[n].buffer = (void*)(b + y * 480);      seg[n].length = dx * 2;         n++; }
+  }
+  seg[n - 1].flags.mark_eof = 1;
+  seg[n - 1].flags.mark_final = 1;
+  gdma_link_mount_buffers(p.lgather, 0, seg, n, nullptr);
+  gdma_buffer_mount_config_t rb = {};
+  rb.buffer = fb + y0 * 480;
+  rb.length = GATHER_ROWS * 480 * 2;
+  rb.flags.mark_final = 1;
+  gdma_link_mount_buffers(p.lrx, 0, &rb, 1, nullptr);
+  xSemaphoreTake(p.done, 0);
+  p.busy = true;
+  gdma_start(p.rx, gdma_link_get_head_addr(p.lrx));
+  gdma_start(p.tx, gdma_link_get_head_addr(p.lgather));
+}
+
+void slideFrame(const uint16_t* a, const uint16_t* b, int dx) {
+  dx = dx < 0 ? 0 : dx > 480 ? 480 : dx & ~1;   // even: every segment stays 4-byte aligned
+  waitFree();
+  uint16_t* fb = fbs[backIdx];
+  // both DMA pairs take turns, so one is always moving data
+  for (int i = 0, y0 = 0; y0 < 480; i++, y0 += GATHER_ROWS) {
+    DmaPair& p = (i & 1) ? dmaOut : dmaIn;
+    dmaWait(p);
+    slideStart(p, fb, a, b, dx, y0);
+  }
+  dmaWait(dmaIn);
+  dmaWait(dmaOut);
+  hashValid[backIdx] = false;   // not a ui frame: next drawFrame redraws everything
+}
+
+void snapshotFront(uint16_t* dst) {
+  waitFree();                              // the frame presented last is the one on screen
+  const uint16_t* src = fbs[backIdx ^ 1];
+  for (int i = 0, y0 = 0; y0 < 480; i++, y0 += GATHER_ROWS) {
+    DmaPair& p = (i & 1) ? dmaOut : dmaIn;
+    dmaWait(p);
+    slideStart(p, dst, src, src, 0, y0);   // dx 0: whole rows of src
+  }
+  dmaWait(dmaIn);
+  dmaWait(dmaOut);
+}
+
+void setPanelClock(uint32_t hz) {
+  if (panel) esp_lcd_rgb_panel_set_pclk(panel, hz);   // takes effect at the next frame start
+}
+
+uint16_t* allocFrame() {
+  uint16_t* p = (uint16_t*)heap_caps_aligned_alloc(64, FB_BYTES, MALLOC_CAP_SPIRAM);
+  if (p) esp_cache_msync(p, FB_BYTES, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_INVALIDATE);   // DMA-only from now on
+  return p;
 }
 
 void displayPause() {
