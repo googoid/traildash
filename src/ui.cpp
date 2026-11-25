@@ -665,17 +665,17 @@ static void renderCompare(const UiState& s) {
   // average over the distance compared
   if (s.cmpPct > -900) {
     snprintf(b, sizeof b, "AVERAGE OVER %.1f km", s.cmpKm);
-    gfx.text(font_tiny, b, CX, 384, DIM, 0);
+    gfx.text(font_tiny, b, CX, 380, DIM, 0);
     float p = s.cmpPct;
     if (fabsf(p) < 0.5f) snprintf(b, sizeof b, "CAR READS RIGHT");
     else snprintf(b, sizeof b, "CAR READS %.1f%% %s", fabsf(p), p > 0 ? "HIGH" : "LOW");
-    gfx.text(font_med, b, CX, 416, fabsf(p) < 2.f ? GREEN : AMBER, 0);
+    gfx.text(font_med, b, CX, 410, fabsf(p) < 2.f ? GREEN : AMBER, 0);
     if (fabsf(p) >= 0.5f && s.cmpSuggestPct > -900) {   // the value to enter in the phone app
       snprintf(b, sizeof b, "SET SPEED CORRECTION %+.1f %%", s.cmpSuggestPct);
-      gfx.text(font_tiny, b, CX, 442, TXT, 0);
-      gfx.text(font_tiny, "HOLD 2 s TO RESET", CX, 460, 0x4E5D6B, 0);
+      gfx.text(font_tiny, b, CX, 434, TXT, 0);
+      gfx.text(font_tiny, "HOLD 2 s TO RESET", CX, 450, 0x4E5D6B, 0);
     } else {
-      gfx.text(font_tiny, "HOLD 2 s TO RESET", CX, 444, 0x4E5D6B, 0);
+      gfx.text(font_tiny, "HOLD 2 s TO RESET", CX, 438, 0x4E5D6B, 0);
     }
   } else {
     gfx.text(font_tiny, "AVERAGE", CX, 384, DIM, 0);
@@ -716,11 +716,14 @@ static void renderTestPattern() {
 }
 
 // ------------------------------------------------------------------ overlays
+// a row along the bottom edge, left to right in screen order: the next screen slides in from the right.
+// Not on the inclinometer screen: its pitch pointer sits right there whenever the car is level.
 static void pageDots(const UiState& s) {
+  if (s.screen == SCREEN_DUAL) return;
   for (int i = 0; i < SCREEN_COUNT; i++) {
-    float y = CY + (i - (SCREEN_COUNT - 1) * 0.5f) * 14;
-    if (i == s.screen) gfx.circle(463, y, 4.2f, Paint(ACCENT));
-    else gfx.circle(463, y, 3, Paint(0x3A4756));
+    float x = CX + (i - (SCREEN_COUNT - 1) * 0.5f) * 14;
+    if (i == s.screen) gfx.circle(x, 463, 4.2f, Paint(ACCENT));
+    else gfx.circle(x, 463, 3, Paint(0x3A4756));
   }
 }
 
