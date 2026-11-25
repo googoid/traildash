@@ -254,74 +254,47 @@ static void buildPlain() {
   drawBgBase();
 }
 
-// speed screen: car-cluster style rev gauge (0 at the bottom, clockwise over the left to the
-// upper right), heading box and digital speed in a dark panel on the lower right.
-// greys are multiples of 8 so RGB565 keeps them neutral
-static constexpr uint32_t SC_BEZEL = 0x202020, SC_FACE = 0x181818, SC_TRACK = 0x282828;
-static constexpr uint32_t SC_REDZONE = 0x682C38, SC_PANEL = 0x101010, SC_HUB = 0x080808;
-static constexpr uint32_t SC_HUBBAND = 0x202020, SC_HUBRING = 0x383838, SC_NEEDLE = 0xD8D8D8;
-static constexpr uint32_t SC_LAMP = 0xB5E07A;
-static constexpr float SC_A0 = 180, SC_SWEEP = 225;              // gauge angles (0 = 12 o'clock)
-static constexpr float SC_FACE_R = 233, SC_PANEL_R = 224;
-static constexpr float SC_TRACK_R0 = 192, SC_TRACK_R1 = 228, SC_NUM_R = 172;
-static constexpr float SC_PANEL_TOP = 174, SC_SPLIT_Y = 237, SC_SPLIT_H = 6;
-static constexpr float SC_VX = 254, SC_VY = 300;                  // panel's left corner (points at the hub)
-static constexpr float SC_TLX = 322, SC_BLX = 322, SC_BLY = 455;  // panel top-left x, bottom-left corner
-static constexpr float SC_SPEED_X = 428, SC_SPEED_Y = 314, SC_UNIT_Y = 362, SC_INFO_Y = 388;
-static float scDeg(float rpm) { return SC_A0 + SC_SWEEP * clampf(rpm / ENGINE_GAUGE_RPM, 0, 1); }
-
-// x where the panel's right edge (the circle r = SC_PANEL_R) is at height y
-static float scRight(float y) { float d = y - CY; return CX + sqrtf(fmaxf(0, SC_PANEL_R * SC_PANEL_R - d * d)); }
-// x of the panel's left (chevron) edge at height y
-static float scLeft(float y) {
-  if (y <= SC_VY) return SC_TLX + (SC_VX - SC_TLX) * (y - SC_PANEL_TOP) / (SC_VY - SC_PANEL_TOP);
-  return SC_VX + (SC_BLX - SC_VX) * (y - SC_VY) / (SC_BLY - SC_VY);
-}
+// speed screen: analog speedometer like the rev gauge on the engine screen (0 lower left, over the
+// top to 200 lower right), digital speed above the centre, odometer in a box at the bottom.
+static constexpr float SP_A0 = -128, SP_A1 = 128;
+static constexpr float SP_MAX = 200;                          // km/h full scale
+static constexpr float SP_R0 = 196, SP_R1 = 214;              // speed band (inside the page dots)
+static constexpr float SP_LABEL_GAP = 9;              // major tick end to label box
+static constexpr float SP_STATUS_Y = 132, SP_SPEED_Y = 250, SP_UNIT_Y = 276;
+static constexpr float SP_SEL_Y = 324;
+static constexpr float SP_BOX_W = 270, SP_BOX_H = 54, SP_BOX_Y = 366;   // trip box
+static constexpr float SP_COL[3] = {CX - 87, CX + 3, CX + 92};           // trip A | trip B | B fuel
+static constexpr float SP_DIV[2] = {CX - 42, CX + 50};                   // column dividers
+static float spDeg(float kmh) { return SP_A0 + (SP_A1 - SP_A0) * clampf(kmh / SP_MAX, 0, 1); }
 
 static void buildSpeed() {
   gfx.setTarget(bgSpeed);
-  Path& p = gfx.path_;
-  p.clear(); p.rect(0, 0, 480, 480);
-  gfx.fill(p, Paint(SC_BEZEL));
-  gfx.circle(CX, CY, SC_FACE_R, Paint(SC_FACE));
-
-  // track with the red zone, ticks every 1000 rpm (500 in between), slanted numbers
-  gfx.arc(CX, CY, SC_TRACK_R0, SC_TRACK_R1, SC_A0 - 9, SC_A0 + SC_SWEEP + 7, Paint(SC_TRACK));
-  gfx.arc(CX, CY, SC_TRACK_R0, SC_TRACK_R1, scDeg(cfg.redlineRpm), SC_A0 + SC_SWEEP + 7, Paint(SC_REDZONE));
-  for (int r = 0; r <= ENGINE_GAUGE_RPM; r += 500) {
-    const bool major = r % 1000 == 0;
-    if (major) radialLine(SC_TRACK_R0 + 10, SC_TRACK_R1 - 4, scDeg(r), 6.f, Paint(0xFFFFFF));
-    else radialLine(SC_TRACK_R0 + 20, SC_TRACK_R1 - 4, scDeg(r), 3.f, Paint(0x8C8C8C));
+  drawBgBase();
+  gfx.arc(CX, CY, SP_R0, SP_R1, SP_A0, SP_A1, Paint(0x17212C));
+  gfx.arc(CX, CY, SP_R1 + 6, SP_R1 + 8, SP_A0, SP_A1, Paint(0x1C2733));
+  for (int v = 0; v <= (int)SP_MAX; v += 5) {
+    const bool major = v % 20 == 0, mid = v % 10 == 0;
+    if (!mid) { radialLine(184, 190, spDeg(v), 1.2f, Paint(TICK2)); continue; }
+    radialLine(major ? 170 : 179, 190, spDeg(v), major ? 2.8f : 1.6f, Paint(major ? TICK : TICK2));
     if (major) {
-      float x, y; polar(SC_NUM_R, scDeg(r), x, y);
-      char b[4]; snprintf(b, sizeof b, "%d", r / 1000);
-      gfx.text(font_dial, b, x, y + 14, 0xFFFFFF, 0);
+      // same gap from every tick to its label's box, whatever the label's width
+      char b[4]; snprintf(b, sizeof b, "%d", v);
+      const float a = deg2rad(spDeg(v)), hw = gfx.textWidth(font_small, b) / 2, hh = 6.5f;
+      const float r = 170 - SP_LABEL_GAP - (fabsf(sinf(a)) * hw + fabsf(cosf(a)) * hh);
+      float x, y; polar(r, spDeg(v), x, y);
+      gfx.text(font_small, b, x, y + hh, v == 0 ? DIM : 0xB7C3CF, 0);
     }
   }
-
-  // hub surround: grey band + lighter rim, open towards the panel
-  gfx.arc(CX, CY, 58, 110, 190, 405, Paint(SC_HUBBAND));
-  gfx.arc(CX, CY, 101, 110, 190, 405, Paint(SC_HUBRING));
-
-  // dark panel: chevron on the left, clipped by a circle on the right
-  {
-    float a0 = asinf((CY - SC_PANEL_TOP) / SC_PANEL_R);   // angle above the horizontal (rad)
-    float a1 = asinf((SC_BLY - CY) / SC_PANEL_R);         // below
-    p.clear();
-    p.moveTo(SC_TLX, SC_PANEL_TOP);
-    for (int i = 0; i <= 48; i++) {
-      float a = -a0 + (a0 + a1) * i / 48.f;
-      p.lineTo(CX + SC_PANEL_R * cosf(a), CY + SC_PANEL_R * sinf(a));
-    }
-    p.lineTo(SC_BLX, SC_BLY);
-    p.lineTo(SC_VX, SC_VY);
-    p.close();
-    gfx.fill(p, Paint(SC_PANEL));
-    const float x0 = scLeft(SC_SPLIT_Y + SC_SPLIT_H) - 1, x1 = scRight(SC_SPLIT_Y) + 1;
-    gfx.rect(x0, SC_SPLIT_Y, x1 - x0, SC_SPLIT_H, Paint(SC_FACE));
-  }
-  gfx.circle(CX, CY, 58, Paint(SC_HUB));
-  gfx.text(font_unit, "KM/H", SC_SPEED_X - 12, SC_UNIT_Y, 0xFFFFFF, 1);
+  gfx.text(font_tiny, "km/h", CX, SP_UNIT_Y, DIM, 0);
+  // trip box: A | B + its fuel use
+  const float x0 = CX - SP_BOX_W / 2;
+  gfx.roundRect(x0 - 1.5f, SP_BOX_Y - 1.5f, SP_BOX_W + 3, SP_BOX_H + 3, 11.5f, Paint(0x2C3A48));
+  gfx.roundRect(x0, SP_BOX_Y, SP_BOX_W, SP_BOX_H, 10, Paint::linear(0, SP_BOX_Y, 0x070B10, 0, SP_BOX_Y + SP_BOX_H, 0x0D141B));
+  gfx.line(SP_DIV[0], SP_BOX_Y + 10, SP_DIV[0], SP_BOX_Y + SP_BOX_H - 10, 1.2f, Paint(0x2C3A48));
+  gfx.line(SP_DIV[1], SP_BOX_Y + 16, SP_DIV[1], SP_BOX_Y + SP_BOX_H - 16, 1.2f, Paint(FAINT));
+  gfx.text(font_tiny, "TRIP A km", SP_COL[0], SP_BOX_Y + 19, DIM, 0);
+  gfx.text(font_tiny, "TRIP B km", SP_COL[1], SP_BOX_Y + 19, DIM, 0);
+  gfx.text(font_tiny, "L/100 km", SP_COL[2], SP_BOX_Y + 19, DIM, 0);
 }
 
 // engine screen layout: rev gauge from 0 (lower left) over the top to full scale (lower right)
@@ -502,66 +475,82 @@ static void renderPeaks(const UiState& s) {
            s.levelSet ? 0x4E5D6B : AMBER, 0);
 }
 
-// Trip distance: one decimal below 1000 km.
-static void fmtKm(char* b, size_t n, float km) {
-  if (km < 1000.f) snprintf(b, n, "%.1f km", km);
-  else snprintf(b, n, "%d km", (int)km);
+// Trip distance, centred at x: whole km large, the tenth smaller and dimmer (odometer style).
+// Tenths are dropped from 10000 km on.
+static void tripText(float x, float y, float km) {
+  char w[12], f[4] = "";
+  if (km < 9999.95f) {
+    const long t = lroundf(km * 10.f);
+    snprintf(w, sizeof w, "%ld", t / 10);
+    snprintf(f, sizeof f, ".%ld", t % 10);
+  } else snprintf(w, sizeof w, "%ld", (long)km);
+  const float ww = gfx.textWidth(font_med, w), wf = f[0] ? gfx.textWidth(font_small, f) + 1 : 0;
+  const float x0 = x - (ww + wf) / 2;
+  gfx.text(font_med, w, x0, y, TXT, -1);
+  if (f[0]) gfx.text(font_small, f, x0 + ww + 1, y, DIM, -1);
 }
 
-// Car-cluster speed screen: rev needle, gear, digital speed, trip A / max, trip B.
+// Speedometer: speed band + max mark, digital speed, selector / gear, trip box.
 static void renderSpeed(const UiState& s) {
-  char b[40];
-
-  // ---- gear box: link lamp (green = speed source live) + current gear (OBD, Toyota) ----
+  char b[48];
   const bool live = s.nav == NAV_LIVE || s.nav == NAV_OBD;
+
+  // ---- source: dot + OBD / GPS, or why there is no speed ----
   {
-    const float x = 334, y0 = 191, y1 = 227;
-    float tri[6] = {x, y0, x - 18, y1, x + 18, y1};
-    gfx.poly(tri, 3, Paint(live && !s.obdNote ? SC_LAMP : live ? AMBER : 0x3A3A3A));
-    // N (P or N: the car doesn't tell them apart), R, or the gear while in D
-    char g[2] = {'-', 0};
-    if (s.selector == 'N' || s.selector == 'R') g[0] = s.selector;
-    else if (s.gear >= 1 && s.gear <= 9) g[0] = (char)('0' + s.gear);
-    gfx.text(font_gear, g, 404, 227, g[0] != '-' ? 0xFFFFFF : 0x4A4A4A, 0);
+    const char* st = s.nav == NAV_OBD ? "OBD" : s.nav == NAV_LIVE ? "GPS"
+                   : s.nav == NAV_NO_FIX ? "NO GPS FIX" : "NO PHONE";
+    if (s.obdNote && s.nav != NAV_OBD) st = s.obdNote;   // adapter found but no speed from it yet
+    const uint32_t c = live && !s.obdNote ? GREEN : AMBER;
+    const float tw = gfx.textWidth(font_tiny, st);
+    gfx.circle(CX - tw / 2 - 9, SP_STATUS_Y - 5, 3.5f, Paint(c));
+    gfx.text(font_tiny, st, CX + 5, SP_STATUS_Y, live && !s.obdNote ? DIM : c, 0);
   }
 
-  // ---- speed ----
+  // ---- max speed: notch in the band (max >= speed, so it sits on the unlit part) ----
+  if (s.maxKmh > 1) {
+    float tri[6] = {0, -(SP_R0 + 3), -5, -(SP_R1 - 1), 5, -(SP_R1 - 1)};
+    Xf xf = Xf::rot(CX, CY, spDeg(s.maxKmh));
+    gfx.poly(tri, 3, Paint(0xC8D2DC, 0.7f), &xf);
+  }
+
+  // ---- speed band + pointer + digits ----
   if (s.speedKmh >= 0) {
+    const float d = spDeg(s.speedKmh);
+    if (s.speedKmh >= 1) gfx.arc(CX, CY, SP_R0, SP_R1, SP_A0, d, Paint(ACCENT));
+    radialLine(SP_R0 - 8, SP_R1 + 4, d, 3.f, Paint(TXT));
     snprintf(b, sizeof b, "%d", (int)lroundf(s.speedKmh));
-    gfx.text(font_speed, b, SC_SPEED_X, SC_SPEED_Y, 0xFFFFFF, 1);
+    gfx.text(font_giant, b, CX, SP_SPEED_Y, TXT, 0);
   } else {
-    gfx.text(font_speed, "--", SC_SPEED_X, SC_SPEED_Y, 0x4A4A4A, 1);
+    gfx.text(font_giant, "--", CX, SP_SPEED_Y, FAINT, 0);
   }
 
-  // ---- trip A / max, then trip B + the source (or why there is none), centred in the narrowing panel ----
-  auto mid = [](float y) { return (scLeft(y) + scRight(y - 5)) * 0.5f; };
-  char km[16];
-  fmtKm(km, sizeof km, s.tripKm);
-  snprintf(b, sizeof b, "%s   MAX %d", km, (int)lroundf(s.maxKmh));
-  gfx.text(font_tiny, b, mid(SC_INFO_Y), SC_INFO_Y, 0x9A9A9A, 0);
-  const char* st = s.nav == NAV_OBD ? "OBD" : s.nav == NAV_LIVE ? "GPS"
-                 : s.nav == NAV_NO_FIX ? "NO GPS FIX" : "NO PHONE";
-  if (s.obdNote && s.nav != NAV_OBD) st = s.obdNote;   // adapter found but no speed from it yet
+  // ---- selector: R N D, active one lit; the gear follows D ----
   {
-    const float sy = SC_INFO_Y + 20;
-    fmtKm(km, sizeof km, s.tripBKm);
-    snprintf(b, sizeof b, "B %s   ", km);
-    float wb = gfx.textWidth(font_tiny, b);
-    const float ws = gfx.textWidth(font_tiny, st);
-    // a long note (OBD CONNECTING ...) takes the whole line: trip B isn't counting then anyway
-    if (wb + ws > scRight(sy - 5) - scLeft(sy) + 18) { b[0] = 0; wb = 0; }
-    const float x0 = mid(sy) - (wb + ws) * 0.5f;
-    gfx.text(font_tiny, b, x0, sy, 0x9A9A9A, -1);
-    gfx.text(font_tiny, st, x0 + wb, sy, live && !s.obdNote ? 0x6A6A6A : AMBER, -1);
+    const char sel = s.selector;
+    char d[3] = {'D', 0, 0};
+    if (sel == 'D' && s.gear >= 1 && s.gear <= 9) d[1] = (char)('0' + s.gear);
+    const char* item[3] = {"R", "N", d};
+    const char key[3] = {'R', 'N', 'D'};
+    float w[3], tot = 0;
+    for (int i = 0; i < 3; i++) { w[i] = gfx.textWidth(font_med, item[i]); tot += w[i]; }
+    const float gap = 22;
+    float x = CX - (tot + 2 * gap) / 2;
+    for (int i = 0; i < 3; i++) {
+      const bool on = sel == key[i];
+      if (on) gfx.roundRect(x - 9, SP_SEL_Y - 25, w[i] + 18, 32, 7, Paint(ACCENT, 0.16f));
+      gfx.text(font_med, item[i], x, SP_SEL_Y, on ? (key[i] == 'R' ? AMBER : ACCENT) : 0x34414E, -1);
+      x += w[i] + gap;
+    }
   }
 
-  // ---- rev needle (rests on 0 without OBD) ----
+  // ---- trip box: trip A, trip B and its average fuel use ----
   {
-    const float rpm = has(s.rpm) ? s.rpm : 0;
-    Xf xf = Xf::rot(CX, CY, scDeg(rpm));
-    float outline[16] = {-14, 0, -11, -60, -7, -130, -3, -222, 3, -222, 7, -130, 11, -60, 14, 0};
-    gfx.poly(outline, 8, Paint(SC_NEEDLE), &xf);
-    gfx.circle(CX, CY, 20, Paint(SC_NEEDLE));
+    const float y = SP_BOX_Y + SP_BOX_H - 9;
+    char v[16];
+    tripText(SP_COL[0], y, s.tripKm);
+    tripText(SP_COL[1], y, s.tripBKm);
+    if (has(s.avgL100)) snprintf(v, sizeof v, "%.1f", s.avgL100);
+    gfx.text(font_med, has(s.avgL100) ? v : "--", SP_COL[2], y, has(s.avgL100) ? TXT : FAINT, 0);
   }
 }
 

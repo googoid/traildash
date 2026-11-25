@@ -62,7 +62,19 @@ int main(int argc, char** argv) {
     {"compare",       mk(SCREEN_COMPARE, 0.f, 0.f)},
     {"compare_start", mk(SCREEN_COMPARE, 0.f, 0.f)},
     {"engine_hold",   mk(SCREEN_ENGINE, 0.f, 0.f)},
+    {"speed_fast",    mk(SCREEN_SPEED, 0.f, 0.f)},
+    {"speed_longtrip", mk(SCREEN_SPEED, 0.f, 0.f)},
   };
+  {   // both trips in the thousands
+    UiState& e = shots[20].s;
+    e.nav = NAV_OBD; e.speedKmh = 98; e.maxKmh = 164; e.tripKm = 1846.3f; e.tripBKm = 8752.9f; e.avgL100 = 15.8f;
+    e.rpm = 2200; e.gear = 4; e.selector = 'D';
+  }
+  {   // highway, 3 digits
+    UiState& e = shots[19].s;
+    e.nav = NAV_OBD; e.speedKmh = 143; e.maxKmh = 158; e.tripKm = 212.4f; e.tripBKm = 612.7f; e.avgL100 = 14.6f;
+    e.rpm = 2900; e.gear = 5; e.selector = 'D';
+  }
   shots[18].s.obdState = 4; shots[18].s.rpm = 760; shots[18].s.holdProgress = 0.55f;
   shots[16].s.obdKmh = 103; shots[16].s.gpsKmh = 98.6f; shots[16].s.cmpKm = 37.2f; shots[16].s.cmpPct = 4.3f; shots[16].s.cmpSuggestPct = -4.1f;
   shots[17].s.obdKmh = 12; shots[17].s.gpsKmh = -1;
@@ -88,7 +100,7 @@ int main(int argc, char** argv) {
   for (int i = 6; i <= 8; i++) { shots[i].s.maxKmh = 112; shots[i].s.tripKm = 48.6f; }
   shots[6].s.nav = NAV_LIVE; shots[6].s.speedKmh = 87.4f; shots[6].s.courseDeg = 47.f;
   for (int i = 9; i <= 10; i++) { shots[i].s.maxKmh = 112; shots[i].s.tripKm = 48.6f; }
-  for (int i = 6; i <= 10; i++) shots[i].s.tripBKm = 2318.4f;
+  for (int i = 6; i <= 10; i++) { shots[i].s.tripBKm = 2318.4f; shots[i].s.avgL100 = 15.2f; }
   shots[9].s.tripBKm = 612.7f;
   shots[9].s.nav = NAV_OBD; shots[9].s.speedKmh = 64; shots[9].s.courseDeg = 47.f; shots[9].s.rpm = 2350; shots[9].s.gear = 3; shots[9].s.selector = 'D';
   shots[10].s.nav = NAV_LIVE; shots[10].s.speedKmh = 63; shots[10].s.courseDeg = 47.f; shots[10].s.obdNote = "OBD NO ANSWER";

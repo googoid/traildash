@@ -20,17 +20,12 @@ let ascii = String((32...126).map { Character(UnicodeScalar($0)!) }) + "°"
 let numeric = " 0123456789-+.°"
 
 let specs: [FontSpec] = [
-    FontSpec(name: "font_giant", file: "RobotoCondensed-Bold.ttf",    px: 150, chars: "0123456789-", tracking: 0),
+    FontSpec(name: "font_giant", file: "RobotoCondensed-Bold.ttf",    px: 116, chars: "0123456789-", tracking: 0),
     FontSpec(name: "font_huge",  file: "RobotoCondensed-Bold.ttf",    px: 92, chars: numeric, tracking: 0),
     FontSpec(name: "font_big",   file: "RobotoCondensed-Bold.ttf",    px: 50, chars: ascii,   tracking: 0),
     FontSpec(name: "font_med",   file: "Roboto-Medium.ttf",           px: 26, chars: ascii,   tracking: 0),
     FontSpec(name: "font_small", file: "Roboto-Bold.ttf",             px: 17, chars: ascii,   tracking: 1),
     FontSpec(name: "font_tiny",  file: "RobotoCondensed-Regular.ttf", px: 15, chars: ascii,   tracking: 0),
-    // speed / rev gauge screen (slanted like a car cluster)
-    FontSpec(name: "font_dial",  file: "RobotoCondensed-Bold.ttf",    px: 38, chars: "0123456789",      tracking: 0, slant: 12),
-    FontSpec(name: "font_gear",  file: "RobotoCondensed-Bold.ttf",    px: 52, chars: "0123456789-PRNDS", tracking: 1, slant: 12),
-    FontSpec(name: "font_speed", file: "RobotoCondensed-Bold.ttf",    px: 84, chars: "0123456789-",     tracking: 0, slant: 12),
-    FontSpec(name: "font_unit",  file: "Roboto-Bold.ttf",             px: 28, chars: "KM/H",            tracking: 0),
 ]
 
 let scriptDir = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
