@@ -257,7 +257,8 @@ static void buildPlain() {
 // top to 200 lower right), digital speed above the centre, odometer in a box at the bottom.
 static constexpr float SP_A0 = -128, SP_A1 = 128;
 static constexpr float SP_MAX = 200;                          // km/h full scale
-static constexpr float SP_R0 = 196, SP_R1 = 214;              // speed band (inside the page dots)
+static constexpr float SP_R0 = 214, SP_R1 = 232;              // speed band, out near the edge
+static constexpr float SP_TICK = SP_R0 - 6;                   // outer end of the ticks
 static constexpr float SP_LABEL_GAP = 9;              // major tick end to label box
 static constexpr float SP_STATUS_Y = 132, SP_SPEED_Y = 250, SP_UNIT_Y = 276;
 static constexpr float SP_SEL_Y = 324;
@@ -270,16 +271,16 @@ static void buildSpeed() {
   gfx.setTarget(bgSpeed);
   drawBgBase();
   gfx.arc(CX, CY, SP_R0, SP_R1, SP_A0, SP_A1, Paint(0x17212C));
-  gfx.arc(CX, CY, SP_R1 + 6, SP_R1 + 8, SP_A0, SP_A1, Paint(0x1C2733));
+  gfx.arc(CX, CY, SP_R1 + 3, SP_R1 + 5, SP_A0, SP_A1, Paint(0x1C2733));
   for (int v = 0; v <= (int)SP_MAX; v += 5) {
     const bool major = v % 20 == 0, mid = v % 10 == 0;
-    if (!mid) { radialLine(184, 190, spDeg(v), 1.2f, Paint(TICK2)); continue; }
-    radialLine(major ? 170 : 179, 190, spDeg(v), major ? 2.8f : 1.6f, Paint(major ? TICK : TICK2));
+    if (!mid) { radialLine(SP_TICK - 6, SP_TICK, spDeg(v), 1.2f, Paint(TICK2)); continue; }
+    radialLine(SP_TICK - (major ? 20 : 11), SP_TICK, spDeg(v), major ? 2.8f : 1.6f, Paint(major ? TICK : TICK2));
     if (major) {
       // same gap from every tick to its label's box, whatever the label's width
       char b[4]; snprintf(b, sizeof b, "%d", v);
       const float a = deg2rad(spDeg(v)), hw = gfx.textWidth(font_small, b) / 2, hh = 6.5f;
-      const float r = 170 - SP_LABEL_GAP - (fabsf(sinf(a)) * hw + fabsf(cosf(a)) * hh);
+      const float r = SP_TICK - 20 - SP_LABEL_GAP - (fabsf(sinf(a)) * hw + fabsf(cosf(a)) * hh);
       float x, y; polar(r, spDeg(v), x, y);
       gfx.text(font_small, b, x, y + hh, v == 0 ? DIM : 0xB7C3CF, 0);
     }
@@ -298,7 +299,8 @@ static void buildSpeed() {
 
 // engine screen layout: rev gauge from 0 (lower left) over the top to full scale (lower right)
 static constexpr float EN_A0 = -125, EN_A1 = 125;
-static constexpr float EN_R0 = 198, EN_R1 = 214;           // gauge band (inside the page dots)
+static constexpr float EN_R0 = 216, EN_R1 = 232;           // gauge band, out near the edge
+static constexpr float EN_TICK = EN_R0 - 6;                // outer end of the ticks
 static constexpr float EN_STATUS_Y = 118, EN_RPM_Y = 202, EN_RPM_UNIT_Y = 228;
 static constexpr float EN_COL_L = 172, EN_COL_R = 308;
 static constexpr float EN_ROW1 = 270, EN_ROW2 = 344;        // label baselines (value 44 px lower)
@@ -312,11 +314,11 @@ static void buildEngine() {
   gfx.arc(CX, CY, EN_R1 - 4, EN_R1, rpmDeg(cfg.redlineRpm), EN_A1, Paint(RED, 0.8f));
   for (int r = 0; r <= ENGINE_GAUGE_RPM; r += 250) {
     bool major = r % 1000 == 0, mid = r % 500 == 0;
-    if (!mid) { radialLine(186, 192, rpmDeg(r), 1.2f, Paint(TICK2)); continue; }
+    if (!mid) { radialLine(EN_TICK - 6, EN_TICK, rpmDeg(r), 1.2f, Paint(TICK2)); continue; }
     uint32_t c = r >= cfg.redlineRpm ? RED : (major ? TICK : TICK2);
-    radialLine(major ? 174 : 182, 192, rpmDeg(r), major ? 2.6f : 1.6f, Paint(c));
+    radialLine(EN_TICK - (major ? 18 : 10), EN_TICK, rpmDeg(r), major ? 2.6f : 1.6f, Paint(c));
     if (major) {
-      float x, y; polar(158, rpmDeg(r), x, y);
+      float x, y; polar(EN_TICK - 34, rpmDeg(r), x, y);
       char b[4]; snprintf(b, sizeof b, "%d", r / 1000);
       gfx.text(font_small, b, x, y + 6, r >= cfg.redlineRpm ? RED : DIM, 0);
     }
