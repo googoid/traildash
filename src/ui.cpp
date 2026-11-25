@@ -525,7 +525,7 @@ static void renderSpeed(const UiState& s) {
     gfx.text(font_giant, "--", CX, SP_SPEED_Y, FAINT, 0);
   }
 
-  // ---- selector: R N D, active one lit; the gear follows D ----
+  // ---- selector: R N D, active one lit (R red, N green, D accent); the gear follows D ----
   {
     const char sel = s.selector;
     char d[3] = {'D', 0, 0};
@@ -538,8 +538,9 @@ static void renderSpeed(const UiState& s) {
     float x = CX - (tot + 2 * gap) / 2;
     for (int i = 0; i < 3; i++) {
       const bool on = sel == key[i];
-      if (on) gfx.roundRect(x - 9, SP_SEL_Y - 25, w[i] + 18, 32, 7, Paint(ACCENT, 0.16f));
-      gfx.text(font_med, item[i], x, SP_SEL_Y, on ? (key[i] == 'R' ? AMBER : ACCENT) : 0x34414E, -1);
+      const uint32_t c = key[i] == 'R' ? RED : key[i] == 'N' ? GREEN : ACCENT;
+      if (on) gfx.roundRect(x - 9, SP_SEL_Y - 25, w[i] + 18, 32, 7, Paint(c, 0.16f));
+      gfx.text(font_med, item[i], x, SP_SEL_Y, on ? c : 0x34414E, -1);
       x += w[i] + gap;
     }
   }
