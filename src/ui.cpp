@@ -204,7 +204,6 @@ static void drawBgBase() {
   Path& p = gfx.path_;
   p.clear(); p.rect(0, 0, 480, 480);
   gfx.fill(p, Paint::radial(CX, CY, 250, BG_MID, BG_EDGE));
-  gfx.ring(CX, CY, 233, 237, Paint(0x1A2430));
 }
 
 static void drawScale(float centerDeg, float sign, float warn, float danger) {
