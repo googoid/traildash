@@ -1,27 +1,54 @@
 # TrailDash — off-road dash display for the Waveshare ESP32-S3-Touch-LCD-2.8C
 
-Round 480×480 off-road dash display. An inclinometer with tilting vehicle silhouettes,
-peak-angle memory, with amber/red warning zones and a buzzer alarm,
-plus a GPS speed / heading / trip screen fed by an iPhone app over Bluetooth LE.
+**A round 480×480 dash display for trucks and 4x4s: inclinometer with tilting vehicle silhouettes,
+cluster-style speedometer with gear indicator, engine gauges and fuel use — on a Waveshare ESP32-S3 round LCD board,
+with a wireless tilt sensor and a companion iPhone app.** Built for a 2005 Toyota 4Runner (with an
+insert for its speedometer pod), but the inclinometer and GPS speed work in any vehicle, and the
+OBD screens with most OBD-II cars through an ELM327 adapter.
 
-## Build & flash
+![TrailDash screens: speed with gear, roll/pitch inclinometer, engine gauges, speedometer check](docs/hero.png)
 
-```sh
-~/.platformio/penv/bin/pio run -t upload
-```
+## Features
 
-## Development — use git
+- **Inclinometer** — roll and pitch with tilting vehicle silhouettes, amber/red warning zones,
+  buzzer alarm and peak-angle memory. A gyro + accelerometer filter keeps it steady over bumps
+  and quick when the truck really tilts.
+- **Wireless tilt sensor** — a XIAO ESP32-C6 + MPU-6050 bolted somewhere solid streams raw IMU
+  data over BLE, so the display can sit anywhere, at any angle.
+- **Speedometer** — car speed from an ELM327 BLE OBD adapter, or GPS speed from the iPhone app;
+  rev needle, two trip meters, max speed.
+- **Gear indicator** — R / N / 1–5 and hold positions D4 / D3 / D2 / DL, decoded from Toyota's
+  undocumented mode-21 data blocks (documented below).
+- **Engine screen** — rpm, coolant, battery voltage, instant and average fuel use from the MAF sensor.
+- **Speed check** — compares the car's speed to GPS and tells you the speedometer / tyre-size
+  correction to enter.
+- **Drive logs and settings on microSD**; settings also editable live from the iPhone app.
+- **Smooth UI** — custom antialiased vector renderer, DMA-composited 30 fps screen slides; a PC
+  preview tool renders every screen without hardware.
+- **3D-printable enclosure** and a snap-in insert for the 4Runner's speedometer opening (CadQuery,
+  STEP + STL included).
 
-The project is under git (branch `main`). Work like this:
+## Hardware
 
-- Check `git status` / `git log --oneline` before starting, so you know the current state.
-- Commit a working state before any risky change (filter rewrites, display/flash code), and
-  commit each finished change separately with a message that says *why*.
-- Don't make ad-hoc backup copies of files — revert with git instead
-  (`git diff`, `git restore <file>`, `git revert <commit>`).
-- Generated files are ignored (`.pio`, preview `.bmp`/binary, Xcode `xcuserdata`); the preview
-  PNGs, enclosure STEP/STL and renders are committed — regenerate and commit them with the change
-  that affects them.
+| Part | Notes |
+|---|---|
+| [Waveshare ESP32-S3-Touch-LCD-2.8C](https://www.waveshare.com/esp32-s3-touch-lcd-2.8c.htm) | the display: round 2.8" 480×480 IPS, touch, PSRAM, microSD slot |
+| Seeed Studio XIAO ESP32-C6 + MPU-6050 or MPU-6500 (GY-521 board) | remote tilt sensor, 4 wires |
+| ELM327 **BLE** OBD-II adapter (e.g. Vgate iOS-Vlink) | optional: car speed, rpm, gear, engine data |
+| iPhone | optional: GPS speed, live settings (`ios/`, SwiftUI) |
+| microSD card (FAT32) | optional: settings, trips, drive logs |
+| 3D printer, PETG or ASA | optional: `enclosure/` |
+
+## Quick start
+
+1. Install [PlatformIO](https://platformio.org/) and flash the display:
+   `pio run -t upload`
+2. Wire the MPU-6050 to the XIAO (see [Remote IMU](#remote-imu-remote--the-tilt-sensor)) and flash it:
+   `cd remote && pio run -t upload`
+3. Mount the sensor rigidly, park on flat ground and **hold the screen for 2 s** to set level.
+4. Optional: build the iPhone app (`ios/`), pair an OBD adapter, insert a microSD card.
+
+To see the UI without any hardware: `tools/preview/build.sh` renders every screen to `preview/*.png`.
 
 ## Use
 
@@ -103,7 +130,7 @@ display over Bluetooth LE. The display's own IMU is not used, so the display can
 Wiring: XIAO `3V3`→VCC, `GND`→GND, `D4` (GPIO22)→SDA, `D5` (GPIO23)→SCL.
 
 ```sh
-cd remote && ~/.platformio/penv/bin/pio run -t upload
+cd remote && pio run -t upload
 ```
 
 - Mount it with the board's **X arrow pointing forward** (or set `remote_forward` in `config.txt`,
@@ -166,3 +193,23 @@ tools/preview/build.sh     # renders all screens to preview/*.png
 ```
 
 Fonts: Roboto / Roboto Condensed (Apache 2.0), regenerated with `swift tools/gen_fonts.swift > src/fonts_data.h`.
+
+## Contributing
+
+Issues and pull requests are welcome — especially OBD data from other vehicles (the
+`obd_probe` setting logs the Toyota data blocks to the SD card) and photos of installs.
+Licensed under the [MIT License](LICENSE).
+
+## Development — use git
+
+The project is under git (branch `main`). Work like this:
+
+- Check `git status` / `git log --oneline` before starting, so you know the current state.
+- Commit a working state before any risky change (filter rewrites, display/flash code), and
+  commit each finished change separately with a message that says *why*.
+- Don't make ad-hoc backup copies of files — revert with git instead
+  (`git diff`, `git restore <file>`, `git revert <commit>`).
+- Generated files are ignored (`.pio`, preview `.bmp`/binary, Xcode `xcuserdata`); the preview
+  PNGs, enclosure STEP/STL and renders are committed — regenerate and commit them with the change
+  that affects them.
+
