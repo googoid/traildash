@@ -1,6 +1,6 @@
-# Car Inclinometer — Waveshare ESP32-S3-Touch-LCD-2.8C
+# TrailDash — off-road dash display for the Waveshare ESP32-S3-Touch-LCD-2.8C
 
-Round 480×480 off-road inclinometer: tilting vehicle silhouettes,
+Round 480×480 off-road dash display. An inclinometer with tilting vehicle silhouettes,
 peak-angle memory, with amber/red warning zones and a buzzer alarm,
 plus a GPS speed / heading / trip screen fed by an iPhone app over Bluetooth LE.
 
@@ -41,10 +41,10 @@ rigidly, then **set level once** on flat ground with it connected.
 
 ## GPS speed — iPhone app (`ios/`)
 
-Open `ios/InclinoLink.xcodeproj` in Xcode, pick your team under *Signing & Capabilities*
-(change the bundle ID if Xcode asks), and run it on the iPhone. Allow Location and Bluetooth.
+Open `ios/TrailDashLink.xcodeproj` in Xcode and set your team + bundle ID: copy them into `ios/Local.xcconfig` (gitignored, see `ios/Config.xcconfig`) or pick them under *Signing & Capabilities*.
+Then run it on the iPhone and allow Location and Bluetooth.
 
-- The app finds the inclinometer (advertising as `Inclinometer`), remembers it, and from then on
+- The app finds TrailDash (advertising as `TrailDash`), remembers it, and from then on
   iOS reconnects automatically whenever the car powers up — also with the phone locked.
 - It sends speed + course about once per second; the device shows `--` after 3 s without data.
 - Max speed and the two trips (A and B) are computed on the device and kept on the SD card (without
@@ -75,7 +75,7 @@ Open `ios/InclinoLink.xcodeproj` in Xcode, pick your team under *Signing & Capab
   enter that in the app (*Device Settings → Car Speed*, or `speed_correction` in config.txt). The
   car's speed is then multiplied by 1 + correction / 100 everywhere: speed screen, trip, max, fuel
   use, and the car side of the speed check (its label shows the correction in use).
-- GPS runs only while the inclinometer is connected. Set Location to **Always** so GPS can start
+- GPS runs only while TrailDash is connected. Set Location to **Always** so GPS can start
   when the device connects while the phone is locked.
 - iOS doesn't reopen a swiped-away app for Bluetooth. The in-app option *Restart after swipe-away*
   covers that with low-power location monitoring (the location arrow then stays on).
@@ -83,7 +83,7 @@ Open `ios/InclinoLink.xcodeproj` in Xcode, pick your team under *Signing & Capab
 
 ### Device settings in the app
 
-*InclinoLink → Device Settings* (while the inclinometer is connected) changes the `config.txt`
+*TrailDash Link → Device Settings* (while TrailDash is connected) changes the `config.txt`
 settings live: warning/danger angles, alarm sound, brightness (the screen follows the slider), rev
 gauge red zone, car speed correction, drive log on/off + interval, remote IMU forward axis, OBD adapter
 name and probe.
@@ -109,7 +109,7 @@ cd remote && ~/.platformio/penv/bin/pio run -t upload
 - Mount it with the board's **X arrow pointing forward** (or set `remote_forward` in `config.txt`,
   e.g. `-y`), any tilt is fine. Power it up with the car standing still: it measures its gyro bias in the
   first 2 s (and remembers it for power-ups while driving).
-- It finds the inclinometer on its own (LED: fast blink = searching, short flash every 3 s = connected).
+- It finds TrailDash on its own (LED: fast blink = searching, short flash every 3 s = connected).
 - Without data for 0.5 s the gauge shows **NO SENSOR** (no angles, no alarm, peaks paused); when the
   sensor is back the filter re-seeds from it in ~0.1 s.
 - Raw samples (250 Hz, sent 10 per packet) go through the tilt filter on the display.

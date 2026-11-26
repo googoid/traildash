@@ -2,11 +2,11 @@ import Foundation
 import CoreBluetooth
 import CoreLocation
 
-/// Streams GPS speed + course to the inclinometer over BLE, also while the phone is locked.
+/// Streams GPS speed + course to TrailDash over BLE, also while the phone is locked.
 ///
-/// Location services run ONLY while the inclinometer is connected:
+/// Location services run ONLY while TrailDash is connected:
 ///  - `bluetooth-central` background mode + state restoration: iOS keeps a pending connect
-///    to the remembered device. When the car powers the inclinometer up, iOS wakes (or
+///    to the remembered device. When the car powers TrailDash up, iOS wakes (or
 ///    relaunches) the app in the background and the connection completes.
 ///  - On connect, GPS starts (`location` background mode keeps the app running). Starting
 ///    it from the background needs "Always" permission. On disconnect, GPS stops and the
@@ -67,7 +67,7 @@ final class LinkManager: NSObject, ObservableObject {
         static let enabled = "enabled"
         static let relaunch = "relaunchAfterSwipe"
         static let peripheral = "peripheralID"
-        static let restore = "InclinoLink.central"
+        static let restore = "TrailDashLink.central"
     }
 
     private var central: CBCentralManager!
@@ -102,7 +102,7 @@ final class LinkManager: NSObject, ObservableObject {
         locationAuth = location.authorizationStatus
         central = CBCentralManager(delegate: self, queue: nil,
                                    options: [CBCentralManagerOptionRestoreIdentifierKey: Keys.restore])
-        location.stopUpdatingLocation()   // GPS starts only once the inclinometer is connected
+        location.stopUpdatingLocation()   // GPS starts only once TrailDash is connected
         if enabled { start() }
     }
 
@@ -136,7 +136,7 @@ final class LinkManager: NSObject, ObservableObject {
         return auth == .authorizedWhenInUse || auth == .authorizedAlways
     }
 
-    /// GPS on — only called while the inclinometer is connected.
+    /// GPS on — only called while TrailDash is connected.
     private func startLocation() {
         guard enabled, locationAllowed else { return }
         location.allowsBackgroundLocationUpdates = true
@@ -168,7 +168,7 @@ final class LinkManager: NSObject, ObservableObject {
         if central.state == .poweredOn { bleState = .searching }
     }
 
-    /// Forget the paired device and look for any inclinometer again.
+    /// Forget the paired device and look for any TrailDash again.
     func forgetDevice() {
         if let p = peripheral { central.cancelPeripheralConnection(p) }
         peripheral = nil
@@ -188,7 +188,7 @@ final class LinkManager: NSObject, ObservableObject {
             return
         }
         // Remembered device: a pending connect never times out, so iOS reconnects
-        // whenever the inclinometer comes into range — even in the background.
+        // whenever TrailDash comes into range — even in the background.
         if let id = savedPeripheralID, let p = central.retrievePeripherals(withIdentifiers: [id]).first {
             connect(p)
             return
@@ -265,7 +265,7 @@ final class LinkManager: NSObject, ObservableObject {
     }
 
     #if DEBUG
-    /// A pretend inclinometer for SwiftUI previews and the simulator (launch argument
+    /// A pretend TrailDash for SwiftUI previews and the simulator (launch argument
     /// `-demoDevice`): settings can be edited, nothing is sent.
     private var demo = false
 

@@ -122,7 +122,7 @@ int main(int argc, char** argv) {
     writeBmp(std::string(outDir) + "/" + sh.name + ".bmp", fb);
   }
   { UiState tp; tp.testPattern = true; ui::renderFull(fb, tp); writeBmp(std::string(outDir) + "/testpattern.bmp", fb); }
-  UiState sp; sp.splash1 = "INCLINOMETER"; sp.splash2 = "starting";
+  UiState sp; sp.splash1 = "TRAILDASH"; sp.splash2 = "starting";
   ui::renderFull(fb, sp);
   writeBmp(std::string(outDir) + "/splash.bmp", fb);
   return 0;

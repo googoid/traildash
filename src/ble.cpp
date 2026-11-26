@@ -7,7 +7,7 @@
 #include <NimBLEDevice.h>
 #include <esp_heap_caps.h>
 
-// the remote IMU finds the inclinometer by the advertised NAV service
+// the remote IMU finds TrailDash by the advertised NAV service
 static constexpr bool streq(const char* a, const char* b) { return *a == *b && (!*a || streq(a + 1, b + 1)); }
 static_assert(streq(NAV_SERVICE_UUID, IMU_LINK_ADV_UUID), "shared/imu_link.h must advertise-match NAV_SERVICE_UUID");
 

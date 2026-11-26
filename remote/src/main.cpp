@@ -5,10 +5,10 @@
 //
 // Reads the IMU at 250 Hz, removes the gyro bias (measured at power-up while the car
 // stands still, remembered in flash for power-ups while driving), and sends batches of
-// 10 samples to the inclinometer over BLE (~25 packets/s). All filtering, mounting and
-// "set level" happen on the inclinometer, exactly as for its built-in IMU.
+// 10 samples to TrailDash over BLE (~25 packets/s). All filtering, mounting and
+// "set level" happen on TrailDash, exactly as for its built-in IMU.
 //
-// LED: fast blink = searching for the inclinometer, short flash every 3 s = connected.
+// LED: fast blink = searching for TrailDash, short flash every 3 s = connected.
 // Serial (115200): status every 2 s.
 #include <Arduino.h>
 #include <Wire.h>
@@ -111,7 +111,7 @@ static void calibrateBias() {
     Serial.printf("[imu] moving at power-up (spread %.2f): stored gyro bias %+.2f %+.2f %+.2f\n", sd, bias[0],
                   bias[1], bias[2]);
   } else {
-    Serial.printf("[imu] moving at power-up (spread %.2f) and no stored bias - the inclinometer will learn it\n", sd);
+    Serial.printf("[imu] moving at power-up (spread %.2f) and no stored bias - TrailDash will learn it\n", sd);
   }
   p.end();
 }
@@ -135,7 +135,7 @@ class ScanCb : public NimBLEScanCallbacks {
     if (found || !d->isAdvertisingService(NimBLEUUID(IMU_LINK_ADV_UUID))) return;
     target = d->getAddress();
     found = true;
-    Serial.printf("[ble] found inclinometer %s rssi %d\n", target.toString().c_str(), d->getRSSI());
+    Serial.printf("[ble] found TrailDash %s rssi %d\n", target.toString().c_str(), d->getRSSI());
     NimBLEDevice::getScan()->stop();
   }
 };
@@ -152,7 +152,7 @@ static bool connect() {
   NimBLERemoteService* svc = client->getService(IMU_SERVICE_UUID);
   NimBLERemoteCharacteristic* c = svc ? svc->getCharacteristic(IMU_CHAR_UUID) : nullptr;
   if (!c || !c->canWriteNoResponse()) {
-    Serial.println("[ble] inclinometer has no remote-IMU characteristic (old firmware?)");
+    Serial.println("[ble] TrailDash has no remote-IMU characteristic (old firmware?)");
     client->disconnect();
     return false;
   }
@@ -220,7 +220,7 @@ void setup() {
   }
   calibrateBias();
 
-  NimBLEDevice::init("Inclinometer IMU");
+  NimBLEDevice::init("TrailDash IMU");
   NimBLEDevice::setMTU(IMU_LINK_HDR + IMU_LINK_MAX_SAMPLES * IMU_LINK_SAMPLE + 3);
   NimBLEDevice::setPower(9);   // dBm; the car is small but full of metal
   NimBLEScan* scan = NimBLEDevice::getScan();

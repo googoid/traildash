@@ -1,5 +1,5 @@
 """
-Fixed-angle dashboard stand for the round inclinometer enclosure.
+Fixed-angle dashboard stand for the TrailDash enclosure.
 
 - Sticks to the dash with 3M VHB double-sided foam tape (base ~66 x 40 mm).
 - Display bolts on with ONE 1/4"-20 x 1/2" (12.7 mm) bolt from behind into the

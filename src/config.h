@@ -1,6 +1,6 @@
 #pragma once
 // ============================================================================
-//  Car inclinometer — Waveshare ESP32-S3-Touch-LCD-2.8C
+//  TrailDash car dash display — Waveshare ESP32-S3-Touch-LCD-2.8C
 // ============================================================================
 
 // ---------------- user settings ----------------
@@ -27,7 +27,7 @@
 #define STATE_SAVE_S         30      // trip/max speed saved at most this often (peaks: within 2 s)
 
 // GPS speed screen (data from the iPhone app over BLE)
-#define BLE_DEVICE_NAME      "Inclinometer"
+#define BLE_DEVICE_NAME      "TrailDash"
 #define NAV_STALE_MS         3000    // no packet for this long -> show "--"
 #define TRIP_MIN_KMH         2.0f    // below this, speed counts as 0 (GPS jitter when parked)
 #define MAX_SPEED_ACC_KMH    5.0f    // max speed only from fixes with speed accuracy better than this

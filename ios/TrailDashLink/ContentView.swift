@@ -19,7 +19,7 @@ struct ContentView: View {
                         .listRowBackground(Color.clear)
                 }
 
-                Section("Inclinometer") {
+                Section("TrailDash") {
                     row("Bluetooth", link.bleState.rawValue, color: bleColor)
                     if let name = link.deviceName { row("Device", name) }
                     row("Packets sent", "\(link.packetsSent)")
@@ -45,7 +45,7 @@ struct ContentView: View {
                         Button("Allow location") { link.requestLocationIfNeeded() }
                     }
                     if link.locationAuth == .authorizedWhenInUse {
-                        Text("Set Location to **Always** — needed to start GPS when the inclinometer connects while the phone is locked.")
+                        Text("Set Location to **Always** — needed to start GPS when TrailDash connects while the phone is locked.")
                             .font(.footnote)
                             .foregroundStyle(.orange)
                     }
@@ -59,17 +59,17 @@ struct ContentView: View {
                 } header: {
                     Text("GPS")
                 } footer: {
-                    Text("GPS runs only while the inclinometer is connected — also with the phone locked. When the car powers up, iOS wakes the app and it reconnects by itself.")
+                    Text("GPS runs only while TrailDash is connected — also with the phone locked. When the car powers up, iOS wakes the app and it reconnects by itself.")
                 }
 
                 Section {
-                    Toggle("Send speed to inclinometer", isOn: $link.enabled)
+                    Toggle("Send speed to TrailDash", isOn: $link.enabled)
                     Toggle("Restart after swipe-away", isOn: $link.relaunchAfterSwipe)
                 } footer: {
                     Text("iOS won't reopen a swiped-away app for Bluetooth. This option lets it reopen after you drive a few hundred metres, using low-power location — the location arrow then stays on all the time.")
                 }
             }
-            .navigationTitle("InclinoLink")
+            .navigationTitle("TrailDash Link")
             .navigationDestination(isPresented: $showSettings) { DeviceSettingsView() }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { link.requestLocationIfNeeded() }

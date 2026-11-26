@@ -1,4 +1,4 @@
-// Car inclinometer for the Waveshare ESP32-S3-Touch-LCD-2.8C
+// TrailDash car dash display for the Waveshare ESP32-S3-Touch-LCD-2.8C
 //
 //  Tap            next screen   (dual gauge -> speed -> peaks)
 //  Hold 2 s       set level (park on flat ground first; stored in flash, screen blinks)
@@ -707,7 +707,7 @@ static void showSplash(const char* l1, const char* l2) {
 void setup() {
   Serial.begin(115200);
   delay(50);
-  Serial.printf("\n[boot] inclinometer  PSRAM %u KB free\n", (unsigned)(ESP.getFreePsram() / 1024));
+  Serial.printf("\n[boot] TrailDash  PSRAM %u KB free\n", (unsigned)(ESP.getFreePsram() / 1024));
   pinMode(PIN_BOOT_BTN, INPUT_PULLUP);
 
   gfx.beginRecord();   // allocate the display list early so it lands in internal RAM
@@ -732,7 +732,7 @@ void setup() {
   // boot badge: fade in, hold (~2 s on screen in total), fade out; the render
   // task fades the first real frame in (backlight starts "off" there)
   constexpr uint32_t SPLASH_MS = 2000, FADE_IN_MS = 600, FADE_OUT_MS = 500;
-  showSplash("INCLINOMETER", "starting...");
+  showSplash("TRAILDASH", "starting...");
   board::waitFrame();
   board::fadeBacklight(0, cfg.backlight, FADE_IN_MS);
 

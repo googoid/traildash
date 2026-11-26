@@ -114,7 +114,7 @@ size_t formatCompact(char* out, size_t size) {
 
 size_t format(char* out, size_t size) {
   int n = snprintf(out, size,
-      "# Inclinometer settings. Edit on a computer, then restart the device.\n"
+      "# TrailDash settings. Edit on a computer, then restart the device.\n"
       "# Delete a line to get its default back; delete the file to rewrite it.\n"
       "\n"
       "# Warning (amber) and danger (red + alarm) angles, degrees\n"

@@ -1,8 +1,8 @@
-// Renders the InclinoLink iOS app icon (1024x1024, opaque PNG).
+// Renders the TrailDashLink iOS app icon (1024x1024, opaque PNG).
 //
-//   swift tools/gen_appicon.swift ios/InclinoLink/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+//   swift tools/gen_appicon.swift ios/TrailDashLink/Assets.xcassets/AppIcon.appiconset/AppIcon.png
 //
-// Same visual language as the inclinometer UI: dark dial, green/amber/red tilt
+// Same visual language as the TrailDash UI: dark dial, green/amber/red tilt
 // scale, cyan pointer and the tilted rear-view SUV.
 import Foundation
 import CoreGraphics

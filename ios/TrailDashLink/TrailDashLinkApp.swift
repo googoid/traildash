@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct InclinoLinkApp: App {
+struct TrailDashLinkApp: App {
     // Created at process start — also on background relaunches (BLE restore,
     // significant location change), where no UI is built.
     @StateObject private var link = LinkManager.shared

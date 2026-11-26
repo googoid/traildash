@@ -1,9 +1,9 @@
-// BLE link to the iPhone app (ios/InclinoLink): the phone connects as a central
+// BLE link to the iPhone app (ios/TrailDashLink): the phone connects as a central
 // and writes GPS speed + course to one characteristic, about once per second.
 #pragma once
 #include <stdint.h>
 
-// Shared with the iOS app — keep in sync with ios/InclinoLink/NavProtocol.swift
+// Shared with the iOS app — keep in sync with ios/TrailDashLink/NavProtocol.swift
 #define NAV_SERVICE_UUID "CCCF9685-6127-47E1-9884-2E68EF1D44A3"
 #define NAV_CHAR_UUID    "1CCA3ED6-DCF2-4A66-A435-AB5016547E5A"
 

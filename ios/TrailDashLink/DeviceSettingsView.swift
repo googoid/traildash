@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The inclinometer's own settings, live over Bluetooth. Every change applies on the device at
+/// TrailDash's own settings, live over Bluetooth. Every change applies on the device at
 /// once (no Save button, like iOS Settings) and is stored in config.txt on its SD card.
 struct DeviceSettingsView: View {
     @EnvironmentObject private var link: LinkManager
@@ -14,7 +14,7 @@ struct DeviceSettingsView: View {
                     ToolbarItem(placement: .topBarTrailing) { ProgressView() }
                 }
             }
-            .alert("Inclinometer", isPresented: errorShown) {
+            .alert("TrailDash", isPresented: errorShown) {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(link.configError ?? "")
@@ -30,7 +30,7 @@ struct DeviceSettingsView: View {
             ContentUnavailableView {
                 Label("Not Connected", systemImage: "antenna.radiowaves.left.and.right.slash")
             } description: {
-                Text("Settings appear here as soon as the inclinometer connects. Turn on the ignition and keep the phone nearby.")
+                Text("Settings appear here as soon as TrailDash connects. Turn on the ignition and keep the phone nearby.")
             }
         case .loading:
             ProgressView("Reading settings…")
@@ -39,7 +39,7 @@ struct DeviceSettingsView: View {
             ContentUnavailableView {
                 Label("Firmware Update Needed", systemImage: "arrow.down.circle")
             } description: {
-                Text("This inclinometer firmware can't be configured from the app. Flash the latest firmware, or edit config.txt on its SD card.")
+                Text("This TrailDash firmware can't be configured from the app. Flash the latest firmware, or edit config.txt on its SD card.")
             }
         case .ready:
             SettingsForm()
@@ -64,7 +64,7 @@ private struct SettingsForm: View {
             if !config.hasCard {
                 Section {
                     Label {
-                        Text("No SD card in the inclinometer. Changes work now but are lost when it powers off.")
+                        Text("No SD card in TrailDash. Changes work now but are lost when it powers off.")
                     } icon: {
                         Image(systemName: "sdcard").foregroundStyle(.orange)
                     }
@@ -331,7 +331,7 @@ private struct SpeedCorrectionSection: View {
         } header: {
             Text("Car Speed")
         } footer: {
-            Text("Corrects the speed read from the car (wrong tyre size, speedometer error): +8 % makes it 8 % higher. Drive a few km above 20 km/h with the phone connected, then enter the value the inclinometer's speed check screen suggests.")
+            Text("Corrects the speed read from the car (wrong tyre size, speedometer error): +8 % makes it 8 % higher. Drive a few km above 20 km/h with the phone connected, then enter the value TrailDash's speed check screen suggests.")
         }
         .onAppear { draft = Self.text(percent) }
         .onChange(of: percent) { _, new in if !editing { draft = Self.text(new) } }
@@ -382,7 +382,7 @@ private struct OBDSection: View {
         } header: {
             Text("OBD Adapter")
         } footer: {
-            Text("Part of the adapter's Bluetooth name, only needed if it isn't found automatically. Logging maker data (probe.txt) takes effect the next time the inclinometer starts and slows the engine values a little.")
+            Text("Part of the adapter's Bluetooth name, only needed if it isn't found automatically. Logging maker data (probe.txt) takes effect the next time TrailDash starts and slows the engine values a little.")
         }
         .onAppear { draft = name }
         .onChange(of: name) { _, new in if !editing { draft = new } }

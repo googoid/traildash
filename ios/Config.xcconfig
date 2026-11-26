@@ -1,0 +1,10 @@
+// Signing settings for the TrailDash Link app.
+// Put your own values in Local.xcconfig next to this file (it is gitignored), e.g.
+//   DEVELOPMENT_TEAM = ABCDE12345
+//   PRODUCT_BUNDLE_IDENTIFIER = com.yourname.TrailDashLink
+// or pick a team under Signing & Capabilities in Xcode.
+
+DEVELOPMENT_TEAM =
+PRODUCT_BUNDLE_IDENTIFIER = com.example.TrailDashLink
+
+#include? "Local.xcconfig"

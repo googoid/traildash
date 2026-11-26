@@ -1,5 +1,5 @@
 """
-Speedometer-opening insert for the round inclinometer enclosure
+Speedometer-opening insert for the TrailDash enclosure
 (2005 Toyota 4Runner V8 instrument cluster, centre pod).
 
 The printed enclosure (enclosure.py) snaps into this insert from the back, and

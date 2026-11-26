@@ -8,10 +8,10 @@
 		<string>bluetooth-central</string>
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Your GPS speed and heading are sent to the inclinometer in your car.</string>
+	<string>Your GPS speed and heading are sent to TrailDash in your car.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Your GPS speed and heading are sent to the inclinometer in your car.</string>
+	<string>Your GPS speed and heading are sent to TrailDash in your car.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Connects to the inclinometer to send it your speed.</string>
+	<string>Connects to TrailDash to send it your speed.</string>
 </dict>
 </plist>

@@ -1,7 +1,7 @@
 import CoreBluetooth
 import CoreLocation
 
-/// Wire format shared with the inclinometer firmware — keep in sync with src/ble.h.
+/// Wire format shared with the TrailDash firmware — keep in sync with src/ble.h.
 enum NavProtocol {
     static let service = CBUUID(string: "CCCF9685-6127-47E1-9884-2E68EF1D44A3")
     static let characteristic = CBUUID(string: "1CCA3ED6-DCF2-4A66-A435-AB5016547E5A")

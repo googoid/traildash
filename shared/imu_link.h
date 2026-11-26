@@ -1,14 +1,14 @@
-// Remote IMU link: XIAO ESP32-C6 + MPU-6050/6500 (remote/) -> inclinometer (src/).
+// Remote IMU link: XIAO ESP32-C6 + MPU-6050/6500 (remote/) -> TrailDash (src/).
 // Shared by both firmwares — change it in one place only.
 //
-// The remote is the BLE central: it scans for the inclinometer (which advertises
+// The remote is the BLE central: it scans for TrailDash (which advertises
 // NAV_SERVICE_UUID, see src/ble.h), connects, and writes batches of raw samples
-// without response to IMU_CHAR_UUID, ~25 times a second. The inclinometer runs its
+// without response to IMU_CHAR_UUID, ~25 times a second. TrailDash runs its
 // own tilt filter and level calibration on them, exactly as for the built-in IMU.
 #pragma once
 #include <stdint.h>
 
-// What the inclinometer advertises (= NAV_SERVICE_UUID in src/ble.h); the remote scans for it.
+// What TrailDash advertises (= NAV_SERVICE_UUID in src/ble.h); the remote scans for it.
 #define IMU_LINK_ADV_UUID "CCCF9685-6127-47E1-9884-2E68EF1D44A3"
 // Service + characteristic the remote writes to (not advertised, found after connecting).
 #define IMU_SERVICE_UUID "65782F4E-DE29-444B-A97D-F39CCFCD31B0"

@@ -1,6 +1,6 @@
 import Foundation
 
-/// The inclinometer's settings as read over BLE — keep in sync with src/ble.h (CFG_*) and
+/// TrailDash's settings as read over BLE — keep in sync with src/ble.h (CFG_*) and
 /// src/settings.cpp. The wire format is the device's config.txt syntax: "key=value" lines.
 ///
 /// Settings are kept as text, keyed like config.txt, so the app shows only what the connected
@@ -78,9 +78,9 @@ enum DeviceLinkError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notConnected: "The inclinometer isn't connected."
-        case .busy: "The inclinometer is still busy with the last request."
-        case .unsupported: "The inclinometer firmware is too old for this."
+        case .notConnected: "TrailDash isn't connected."
+        case .busy: "TrailDash is still busy with the last request."
+        case .unsupported: "The TrailDash firmware is too old for this."
         }
     }
 }
