@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Car inclinometer firmware (ESP32-S3, PlatformIO), remote IMU firmware (`remote/`, XIAO ESP32-C6, own
+TrailDash car dash display firmware (ESP32-S3, PlatformIO), remote IMU firmware (`remote/`, XIAO ESP32-C6, own
 PlatformIO project; protocol in `shared/imu_link.h`), iOS GPS link app (`ios/`), enclosure CAD (`enclosure/`).
 See README.md for build, usage and architecture.
 
@@ -12,6 +12,12 @@ Follow the "Development — use git" section in README.md:
 - Commit a working state before risky changes; commit each finished change separately, message says *why*.
 - No ad-hoc backup copies — revert with git (`git restore`, `git revert`).
 - Commit only when the user asks; end commit messages with the attribution trailer from the session.
+
+## Project notes
+
+`notes/` holds what earlier sessions learned (hardware quirks, the car's OBD data, workflow preferences),
+indexed in `notes/MEMORY.md`. Read the relevant note before working in that area. New notes go there too,
+one fact per file. The repo is public, so keep them free of personal data.
 
 ## Device
 

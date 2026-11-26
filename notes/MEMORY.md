@@ -1,0 +1,6 @@
+- [Show CAD renders](show-cad-renders.md) — open render PNGs for the user after every CAD build/change
+- [Panel odd-row damage](panel-odd-rows-damage.md) — odd rows dead (cracked glass kills one gate-driver side); stripes/pixelized = hardware
+- [Internal RAM tight](internal-ram-tight.md) — ~15 KB free; new buffers/stacks go to PSRAM, check serial 'm' after upload
+- [Vehicle: 2005 4Runner V8 auto](vehicle-4runner.md) — the car; OBD CAN 11/500, supported PIDs, gear not in standard PIDs
+- [Read big logs from the SD card](read-logs-from-sd.md) — for probe.txt / drive logs ask to plug the card into the Mac, serial is too slow
+- [Toyota selector decode](toyota-selector-decode.md) — 21D9 C/D = R/D/4/3/2/L, 21E6 0x04 = brake, P vs N not available
