@@ -21,6 +21,7 @@ static constexpr uint32_t TICK2   = 0x45525F;
 static constexpr uint32_t ACCENT  = 0x38D9F5;
 static constexpr uint32_t GREEN   = 0x2EE6A6;
 static constexpr uint32_t AMBER   = 0xFFB020;
+static constexpr uint32_t ORANGE  = 0xFF7A1A;   // gear hold (lever on 4 3 2 L)
 static constexpr uint32_t RED     = 0xFF3B5C;
 static constexpr uint32_t TIRE    = 0x16191E;
 static constexpr uint32_t DARKP   = 0x2A3139;
@@ -525,11 +526,14 @@ static void renderSpeed(const UiState& s) {
     gfx.text(font_giant, "--", CX, SP_SPEED_Y, FAINT, 0);
   }
 
-  // ---- selector: R N D, active one lit (R red, N green, D accent); the gear follows D ----
+  // ---- selector: R N D, active one lit (R red, N green, D accent); the gear follows D.
+  // A hold position lights the D slot orange with the lever range: D4 D3 D2 DL. ----
   {
     const char sel = s.selector;
+    const bool hold = sel == '4' || sel == '3' || sel == '2' || sel == 'L';
     char d[3] = {'D', 0, 0};
-    if (sel == 'D' && s.gear >= 1 && s.gear <= 9) d[1] = (char)('0' + s.gear);
+    if (hold) d[1] = sel;
+    else if (sel == 'D' && s.gear >= 1 && s.gear <= 9) d[1] = (char)('0' + s.gear);
     const char* item[3] = {"R", "N", d};
     const char key[3] = {'R', 'N', 'D'};
     float w[3], tot = 0;
@@ -537,8 +541,8 @@ static void renderSpeed(const UiState& s) {
     const float gap = 22;
     float x = CX - (tot + 2 * gap) / 2;
     for (int i = 0; i < 3; i++) {
-      const bool on = sel == key[i];
-      const uint32_t c = key[i] == 'R' ? RED : key[i] == 'N' ? GREEN : ACCENT;
+      const bool on = sel == key[i] || (i == 2 && hold);
+      const uint32_t c = key[i] == 'R' ? RED : key[i] == 'N' ? GREEN : hold ? ORANGE : ACCENT;
       if (on) gfx.roundRect(x - 9, SP_SEL_Y - 25, w[i] + 18, 32, 7, Paint(c, 0.16f));
       gfx.text(font_med, item[i], x, SP_SEL_Y, on ? c : 0x34414E, -1);
       x += w[i] + gap;

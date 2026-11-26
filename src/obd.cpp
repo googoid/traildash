@@ -296,7 +296,7 @@ static void pollVolts() {
 // When the ECU answers 21DA at connect, the header stays on 7E0 for everything (the mode-01 PIDs
 // come from the same ECU), so no header switching per request.
 //
-// The selector comes from blocks 21E6 and 21D3 (see toyotaStep). With cfg.obdProbe, these blocks
+// The selector comes from blocks 21E6 and 21D9 (see toyotaStep). With cfg.obdProbe, these blocks
 // are logged to probe.txt whenever they change, with speed, rpm, throttle, gear and selector.
 static constexpr size_t PROBE_BUF = 16384;
 static char* probeBuf = nullptr;   // PSRAM; guarded by mux
@@ -313,6 +313,7 @@ static void plog(const char* fmt, ...) {
   if (n > (int)sizeof line - 1) n = sizeof line - 1;
   char ts[16];
   int t = snprintf(ts, sizeof ts, "%9.2f ", millis() * 1e-3f);
+  Serial.printf("[probe] %s%s", ts, line);   // live too: watch it over USB while testing in the car
   portENTER_CRITICAL(&mux);
   if (probeBuf && probeLen + t + n < PROBE_BUF) {
     memcpy(probeBuf + probeLen, ts, t);
@@ -428,10 +429,23 @@ static void detectToyota() {
   else setHeader(0x7DF);
 }
 
-// Selector (found with P/R/N/D tests while parked):
-//   21E6 byte A bit 0x10 set  -> P or N (neutral start switch; P and N look the same)
-//   otherwise 21D3 byte C bit 0x80 set -> D, clear -> R
-static uint32_t hashDA = 0, hashE6 = 0, hashD3 = 0;
+// Selector (found by moving the lever through P R N D 4 3 2 L, parked, engine running):
+//   21E6 byte A bit 0x10 set -> P or N (neutral start switch; the ECU has no separate P input,
+//                               no block tells P from N). Bit 0x04 is the brake pedal.
+//   21D9 bytes C, D (multi-frame; frame 1 holds the gearbox temperature):
+//     R 04 00   D 00 04   4 00 06   3 00 01   2 02 00   L 03 00
+static uint32_t hashDA = 0, hashE6 = 0, hashD9 = 0;
+
+// 21D9 bytes C, D -> 'R' 'D' '4' '3' '2' 'L', 0 = no lever switch closed (between positions)
+static char rangeFromD9(uint8_t c, uint8_t d) {
+  if (c == 0x04) return 'R';
+  if (c == 0x03) return 'L';
+  if (c == 0x02) return '2';
+  if (d & 0x02) return '4';
+  if (d & 0x04) return 'D';
+  if (d & 0x01) return '3';
+  return 0;
+}
 
 static void logBlock(uint8_t lid, uint32_t& hash, const char* r) {
   if (!cfg.obdProbe) return;
@@ -450,9 +464,12 @@ static void toyotaStep() {
   logBlock(0xE6, hashE6, r);
   char sel = 'N';
   if (!(hexByte(r + 4) & 0x10)) {
-    if (!readBlock(0xD3, r, sizeof r, true)) return;
-    logBlock(0xD3, hashD3, r);
-    sel = hexByte(r + 8) & 0x80 ? 'D' : 'R';
+    if (!readBlock(0xD9, r, sizeof r, false)) return;
+    logBlock(0xD9, hashD9, r);
+    const char* f0 = strstr(r, "0:61D9");   // first frame: 61 D9 A B C D
+    if (!f0 || strlen(f0) < 14) return;
+    sel = rangeFromD9(hexByte(f0 + 10), hexByte(f0 + 12));
+    if (!sel) return;   // lever between positions: keep the last one
   }
   portENTER_CRITICAL(&mux);
   data.selector = sel; data.selectorMs = millis();

@@ -59,8 +59,9 @@ Open `ios/InclinoLink.xcodeproj` in Xcode, pick your team under *Signing & Capab
   OBD adapter not delivering yet, grey = no speed), the speed, trip A / max below it, then trip B
   and the source (a long warning like OBD CONNECTING takes that whole line).
   The box shows **N** in P or N (the car doesn't tell them apart), **R** in reverse and the current
-  gear (1–5) in D. It comes from the engine ECU's Toyota data blocks, found by probing a 2005 4Runner:
-  `21DA` byte A = gear, `21E6` byte A bit 0x10 = P/N, `21D3` byte C bit 0x80 = D (clear = R).
+  gear (1–5) in D. A gear hold position lights orange as **D4**, **D3**, **D2** or **DL**. It comes from the engine ECU's Toyota data blocks, found by probing a 2005 4Runner:
+  `21DA` byte A = gear, `21E6` byte A bit 0x10 = P/N (0x04 = brake pedal), `21D9` bytes C, D = lever
+  (R `04 00`, D `00 04`, 4 `00 06`, 3 `00 01`, 2 `02 00`, L `03 00`).
   On other cars it shows `-`.
 - The **engine screen** (OBD only) shows a rev gauge (red zone: `redline` in config.txt), coolant
   (blue = cold, amber from 105 °C, red from 110 °C), adapter voltage, fuel use now (L/100 km, or L/h
@@ -126,7 +127,7 @@ computer and restart. The card also stores:
 | `/incl/rlevel_a.txt`, `rlevel_b.txt` | level reference (of the remote IMU) |
 | `/incl/state_a.txt`, `state_b.txt` | peak angles, max speed, trips A and B, fuel used for the average, drive log counter |
 | `/incl/logs/NNNNN.csv` | drive log, one file per power-up: angles, speed + source, heading, OBD values, trips A and B |
-| `/incl/probe.txt` | OBD probe (`obd_probe = 1`, Toyota only): the gear / selector data blocks (21DA, 21E6, 21D3), each reply logged when it changes, with speed / rpm / throttle / gear / selector |
+| `/incl/probe.txt` | OBD probe (`obd_probe = 1`, Toyota only): the gear / selector data blocks (21DA, 21E6, 21D9), each reply logged when it changes (also printed to serial), with speed / rpm / throttle / gear / selector |
 
 Records are written alternately to the `_a`/`_b` file with a sequence number and checksum, so a power
 cut during a write keeps the previous version. The drive log reaches the card every 10 s.

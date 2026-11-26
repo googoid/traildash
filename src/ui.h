@@ -33,7 +33,7 @@ struct UiState {
   // engine screen (OBD); values < -900 = not available
   uint8_t obdState = 0;                 // obd::State: 0 scanning, 1 connecting, 2 init, 3 no answer, 4 live
   uint8_t gear = 0;                     // current gear (Toyota 21DA), 0 = unknown
-  char selector = 0;                    // 'N' (P or N), 'R', 'D'; 0 = unknown
+  char selector = 0;                    // 'N' (P or N), 'R', 'D', hold '4' '3' '2' 'L'; 0 = unknown
   float rpm = -999, coolantC = -999, volts = -999, intakeC = -999, loadPct = -999;
   float fuelLph = -999;                 // instant fuel flow, L/h
   float fuelL100 = -999;                // instant consumption, L/100 km (only while moving)

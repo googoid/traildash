@@ -56,7 +56,7 @@ struct Shared {
   volatile uint8_t obdState = 0;
   volatile float rpm = -999, coolantC = -999, volts = -999, intakeC = -999, loadPct = -999;
   volatile uint8_t gear = 0;      // 0 = unknown
-  volatile char selector = 0;     // 'N' (P or N), 'R', 'D'; 0 = unknown
+  volatile char selector = 0;     // 'N' (P or N), 'R', 'D', hold '4' '3' '2' 'L'; 0 = unknown
   volatile float fuelLph = -999, fuelL100 = -999;
   volatile double fuelL = 0, fuelKm = 0;  // since trip B reset (average consumption)
   // speed comparison: both sources separately, distances while both were live and moving
