@@ -1,17 +1,17 @@
 """
 Open-back enclosure for the Waveshare ESP32-S3-Touch-LCD-2.8C (round 2.8", 95.86 mm glass).
 
-Same outside as enclosure.py (diameter, depth, back face, snap pockets), so it
-still snaps into cluster_insert.py, but with no mount: no 1/4"-20 nut, no back plate. The display
+Outside (diameter, depth, back face, snap pockets) from board.py, so it snaps
+into cluster_insert.py. No back plate. The display
 drops in face-up, the glass sits in the front pocket on a thin ledge, and four
 arms reach in from the side wall to the board's M2 standoffs; 4x M2x6 screws
 from the back pull the board (and so the glass) onto the ledge. Behind the
 ledge everything is open.
 
 Board positions (measured screw holes, BOARD_SHIFT for the rest) come from
-enclosure.py, see its docstring.
+board.py, see its docstring.
 
-Coordinates as in enclosure.py: x, y = glass centre viewed from the BACK (USB
+Coordinates as in board.py: x, y = glass centre viewed from the BACK (USB
 ports lower-left / lower-right), d = depth from the glass front face, + toward
 the back.
 
@@ -23,12 +23,12 @@ Run:  python enclosure_open.py [path/to/ESP32-S3-Touch-LCD-2.8C.step]
 """
 import math, sys, os
 import cadquery as cq
-import enclosure as E
+import board as E
 
 STANDOFFS, SX, SY = E.STANDOFFS, E.SX, E.SY
 
 # ---------------- enclosure ----------------
-OUT_R      = E.OUT_R                 # same outside as enclosure.py -> fits the cluster insert
+OUT_R      = E.OUT_R                 # outside from board.py -> fits the cluster insert
 FRONT, BACK = E.FRONT, E.BACK
 POCKET_R   = E.POCKET_R
 LEDGE_T    = 2.4                     # glass ledge thickness
@@ -91,7 +91,7 @@ def build():
         body = body.cut(cq.Workplane("XY").workplane(offset=ARM_FRONT + ARM_T)
                         .center(sx, sy).circle(HEAD_D / 2).extrude(BACK))
 
-    # snap-catch pockets for the cluster insert (as in enclosure.py); the rear wall
+    # snap-catch pockets for the cluster insert (board.py); the rear wall
     # is thinner than the pocket is deep, so a pad inside the wall carries each one
     for a in E.SNAP_ANG:
         half = math.degrees((E.SNAP_W / 2 + E.SNAP_GAP + SNAP_PAD_SIDE) / OUT_R)

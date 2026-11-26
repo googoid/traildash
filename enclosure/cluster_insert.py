@@ -2,7 +2,7 @@
 Speedometer-opening insert for the TrailDash enclosure
 (2005 Toyota 4Runner V8 instrument cluster, centre pod).
 
-The printed enclosure (enclosure.py) snaps into this insert from the back, and
+The printed enclosure (enclosure_open.py) snaps into this insert from the back, and
 the insert pushes into the speedometer opening of the cluster bezel:
 
 - the opening is a circle with a FLAT BOTTOM; the insert has the same flat
@@ -45,7 +45,8 @@ Run:  python cluster_insert.py        -> cluster_insert.stl / .step
 """
 import math, os
 import cadquery as cq
-import enclosure as E
+import board as E
+import enclosure_open
 
 # ---------------- car (from the photo, see docstring) ----------------
 OPEN_D     = 128.0     # bezel opening (round part), estimated
@@ -228,7 +229,7 @@ def build():
 
 
 def check(body):
-    enc = E.build().val()
+    enc = enclosure_open.build().val()
     v = body.val().intersect(enc).Volume()
     print("insert/enclosure overlap:", f"{v:.3f} mm3", "OK" if v < 1e-3 else "COLLISION")
     # behind the flange, everything but the spring tips must be inside the opening
